@@ -1,0 +1,126 @@
+{
+  "description": "Eleanor's case with realistic friction: first supplier not taking Medicare patients, one out of stock, one no-answer-then-yes that later goes silent, PCP office loses the first request, patient misses the first update call. Unscripted suppliers never pick up.",
+  "parties": {
+    "(312) 555-0142": {
+      "name": "Lakeshore Home Medical Equipment",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: Lakeshore Home Medical, this is Dana.\nAgent: Hi Dana, this is Mira, an automated care coordinator calling on behalf of a patient, Eleanor Martinez. She has Original Medicare Part B and needs a standard manual wheelchair, K0001. Are you taking new Medicare patients?\nSupplier: We're enrolled with Medicare, yeah, but honestly we stopped taking new Medicare patients last month. Our billing person left and we're backed up. Maybe try us again in a couple of months.\nAgent: Understood, thank you for your time."
+          }
+        ]
+      }
+    },
+    "(312) 555-0468": {
+      "name": "Lincoln Park DME Services",
+      "calls": {
+        "supplier_screen": [
+          { "disposition": "no_answer" },
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: Lincoln Park DME, Marcus speaking.\nAgent: Hi Marcus, this is Mira, an automated care coordinator calling for Eleanor Martinez. Original Medicare, no supplemental. She needs a standard manual wheelchair, K0001, delivered to 60614. Are you taking new Medicare patients and do you have one in stock?\nSupplier: Yep, we take Medicare. 60614 is right down the street from us. We've got a few of the basic K0001 chairs on the floor.\nAgent: Great. How soon could you deliver once you have the signed order?\nSupplier: Two, three days tops. Send the order over and we'll get her on the schedule.\nAgent: So I can tell her you'll take her on?\nSupplier: Yeah, put us down."
+          }
+        ],
+        "supplier_followup": [
+          { "disposition": "no_answer" },
+          { "disposition": "voicemail" },
+          { "disposition": "no_answer" }
+        ]
+      }
+    },
+    "(773) 555-0356": {
+      "name": "Halsted Home Health Supply",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: Halsted Home Health.\nAgent: Hi, this is Mira, calling on behalf of a Medicare patient who needs a standard manual wheelchair, K0001, in 60614. Are you taking new Medicare patients?\nSupplier: We are. The K0001s though, we're out. Manufacturer's got us on backorder, they're saying three weeks, could be longer. We could put her on the list.\nAgent: Thanks, I'll note that."
+          }
+        ]
+      }
+    },
+    "(773) 555-0211": {
+      "name": "Prairie State Medical Supply",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: Prairie State Medical, this is Priya.\nAgent: Hi Priya, this is Mira, an automated care coordinator for Eleanor Martinez, Original Medicare Part B. She needs a standard manual wheelchair, K0001, delivered to 60614. Are you taking new Medicare patients?\nSupplier: We are. And we stock K0001, we've got plenty.\nAgent: Do you deliver to 60614?\nSupplier: We cover the whole north side, so yes. Usually about four days after we get a signed order and verify eligibility.\nAgent: Can I confirm you'll take her case?\nSupplier: Sure, happy to. Just get us the written order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: Prairie State Medical, Priya.\nAgent: Hi Priya, Mira again, following up on Eleanor Martinez's K0001 wheelchair.\nSupplier: Oh yes, we got the order from Dr. Chen's office this morning. Eligibility checks out. She's on the truck for Tuesday, so about four days.\nAgent: Perfect, thank you."
+          }
+        ]
+      }
+    },
+    "(312) 555-0198": {
+      "name": "Sunrise Family Medicine (Dr. Sarah Chen)",
+      "calls": {
+        "pcp_order_request": [
+          {
+            "disposition": "connected",
+            "transcript": "Office: Sunrise Family Medicine, this is Maria.\nAgent: Hi Maria, this is Mira, an automated care coordinator for Eleanor Martinez, date of birth on file. Dr. Chen saw her three days ago and noted a verbal order for a standard manual wheelchair. We need the written order so a Medicare supplier can deliver it.\nOffice: Let me look... okay, I see the note. I'll send it over to Dr. Chen's MA to prep the order. Usually takes a couple of days for her to sign.\nAgent: Thank you. Who should I follow up with?\nOffice: Just ask for me, Maria."
+          }
+        ],
+        "pcp_order_nudge": [
+          {
+            "disposition": "connected",
+            "transcript": "Office: Sunrise Family Medicine.\nAgent: Hi, this is Mira following up on a written wheelchair order for Eleanor Martinez. I spoke with Maria a couple of days ago.\nOffice: Maria's out today. Let me check... I don't see any order request for her in the queue. Nothing came through to Dr. Chen. Are you sure it was sent?\nAgent: It was requested by phone. Can I resend it?\nOffice: Fax it to 312-555-0199, attention Dr. Chen's MA, and we'll take care of it."
+          },
+          {
+            "disposition": "connected",
+            "transcript": "Office: Sunrise Family Medicine, Maria speaking.\nAgent: Hi Maria, Mira again about Eleanor Martinez's wheelchair order.\nOffice: Yes, sorry about the mix-up. We got your fax. Dr. Chen signed it this morning and we faxed it to the supplier and back to you.\nAgent: Thank you so much."
+          },
+          {
+            "disposition": "connected",
+            "transcript": "Office: Sunrise Family Medicine, Maria.\nAgent: Hi Maria, it's Mira. We received Dr. Chen's order for Eleanor Martinez, but it's coded K0003, a lightweight wheelchair, and the NPI is missing. Medicare will deny it as written. She needs a standard manual wheelchair, K0001.\nOffice: Oh no, the MA must have picked the wrong template. Let me grab Dr. Chen... okay, she's corrected it to K0001, added her NPI and re-signed. I'm faxing it now.\nAgent: Thank you, I'll watch for it."
+          }
+        ]
+      }
+    },
+    "(312) 555-0100": {
+      "name": "Eleanor Martinez (patient)",
+      "calls": {
+        "patient_update": [
+          { "disposition": "no_answer" },
+          {
+            "disposition": "connected",
+            "transcript": "Patient: Hello?\nAgent: Hi Mrs. Martinez, this is Mira, the automated care coordinator working on your wheelchair. Your doctor's office is preparing the written order and we've found a supplier who can deliver.\nPatient: Oh good. But am I going to get a bill for the whole chair? I really can't afford that.\nAgent: Medicare Part B covers most of it. You'd typically owe about 20 percent.\nPatient: Twenty percent of what though? Nobody told me a number. And will someone show me how to fold it?\nAgent: I'll make sure someone follows up on both of those."
+          },
+          {
+            "disposition": "connected",
+            "transcript": "Patient: Hello?\nAgent: Hi Mrs. Martinez, it's Mira. Your wheelchair is scheduled for delivery Tuesday from Prairie State Medical Supply. You'll owe about 20 percent of the Medicare-approved amount, and the supplier will bill you after delivery.\nPatient: Tuesday, okay. Twenty percent, they'll send the bill. Got it, thank you dear."
+          }
+        ]
+      }
+    }
+  },
+  "written_orders": [
+    {
+      "hcpcs_code": "K0003",
+      "item_description": "Lightweight wheelchair",
+      "quantity": 1,
+      "patient_name": "Eleanor Martinez",
+      "prescriber_name": "Dr. Sarah Chen",
+      "prescriber_npi": null,
+      "face_to_face_date": "2026-11-15",
+      "order_date": "2026-11-22",
+      "signed": true
+    },
+    {
+      "hcpcs_code": "K0001",
+      "item_description": "Standard manual wheelchair",
+      "quantity": 1,
+      "patient_name": "Eleanor Martinez",
+      "prescriber_name": "Dr. Sarah Chen",
+      "prescriber_npi": "1234567893",
+      "face_to_face_date": "2026-11-15",
+      "order_date": "2026-11-23",
+      "signed": true
+    }
+  ]
+}

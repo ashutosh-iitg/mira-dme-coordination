@@ -1,0 +1,26 @@
+{
+  "case_id": "case-eleanor-martinez",
+  "patient": {
+    "name": "Eleanor Martinez",
+    "age": 72,
+    "phone": "(312) 555-0100",
+    "home_zip": "60614",
+    "coverage": "Original Medicare Part B",
+    "has_supplemental": false
+  },
+  "equipment": {
+    "description": "Standard manual wheelchair",
+    "hcpcs_code": "K0001"
+  },
+  "pcp": {
+    "name": "Dr. Sarah Chen",
+    "practice": "Sunrise Family Medicine",
+    "city": "Chicago, IL",
+    "phone": "(312) 555-0198"
+  },
+  "pcp_visit_days_ago": 3,
+  "order_status": "verbal_order_in_chart",
+  "assumptions": [
+    "Patient phone and home_zip are not in the intake; they are placeholders needed to rank suppliers and call the patient."
+  ]
+}

@@ -1,0 +1,33 @@
+{
+  "description": "The PCP office won't sign until it has documentation the system can't produce, so the case has to come back to a human. Prairie State is the only supplier who answers.",
+  "parties": {
+    "(773) 555-0211": {
+      "name": "Prairie State Medical Supply",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: Prairie State Medical, this is Priya.\nAgent: Hi Priya, this is Mira, an automated care coordinator for Eleanor Martinez, Original Medicare Part B. She needs a standard manual wheelchair, K0001, delivered to 60614. Are you taking new Medicare patients?\nSupplier: We are. And we stock K0001, we've got plenty.\nAgent: Do you deliver to 60614?\nSupplier: We cover the whole north side, so yes. Usually about four days after we get a signed order.\nAgent: Can I confirm you'll take her case?\nSupplier: Sure, happy to."
+          }
+        ]
+      }
+    },
+    "(312) 555-0198": {
+      "name": "Sunrise Family Medicine (Dr. Sarah Chen)",
+      "calls": {
+        "pcp_order_request": [
+          {
+            "disposition": "connected",
+            "transcript": "Office: Sunrise Family Medicine, this is Maria.\nAgent: Hi Maria, this is Mira, an automated care coordinator for Eleanor Martinez. Dr. Chen noted a verbal order for a standard manual wheelchair three days ago. We need the written order for Medicare.\nOffice: I see the note. I'll pass it to Dr. Chen's MA to prep the order. Give us a couple of days.\nAgent: Thank you."
+          }
+        ],
+        "pcp_order_nudge": [
+          {
+            "disposition": "connected",
+            "transcript": "Office: Sunrise Family Medicine, Maria.\nAgent: Hi Maria, Mira following up on Eleanor Martinez's wheelchair order.\nOffice: So, Dr. Chen reviewed it and she won't sign yet. Her visit note doesn't document why a cane or walker isn't enough, and Medicare will ask. She wants a mobility assessment from physical therapy first, or for Mrs. Martinez to come back in. Someone needs to set that up with the patient.\nAgent: Understood, I'll get that to the right person."
+          }
+        ]
+      }
+    }
+  }
+}
