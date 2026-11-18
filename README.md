@@ -16,14 +16,15 @@ The additional [Deep Agents coordinator demo](COORDINATOR.md) supervises PT/repo
 Temporal, with JSON case documents and mocked communication/booking. Run its separate worker with
 `uv run python -m mira.coordinator.worker`; use `uv run python -m mira.coordinator --help` for its CLI.
 
-For the integrated five-case run with real Temporal workflows, live coordinator/extraction, mock voice
-calls and independent timestamped traces, see [SIMULATION.md](SIMULATION.md):
-`uv run python -m mira.simulation.run`.
+The real case uses that coordinator for supplier requirements, administrative PCP information requests,
+and patient cost questions. See [MIDRUN_COORDINATION.md](MIDRUN_COORDINATION.md) for the sequence diagram,
+evidence graph and safeguards. Run the normal worker and `start_case`; use `SCENARIO=pcp_information`
+or `SCENARIO=supplier_information` on the worker to focus on a particular loop.
 
 ## Setup
 
 Requires Python 3.12+, [uv](https://docs.astral.sh/uv/), and the Temporal CLI with the cloud plugin
-(`brew install temporalio/brew/temporal-cloud`) for the Cloud demos. The integrated simulations instead
+(`brew install temporalio/brew/temporal-cloud`) for the Cloud demos. Workflow tests instead
 start temporary local time-skipping Temporal servers through the SDK; their histories do not appear in Cloud.
 No database server or Docker is required.
 
@@ -74,8 +75,16 @@ The case log is in `runtime/events.jsonl`; escalations are in `runtime/escalatio
 **Default scenario** — what you should see: Lakeshore isn't taking Medicare patients, Halsted is out of stock,
 Lincoln Park doesn't answer then says yes on the callback; the PCP office loses the request (re-faxed), then
 sends an order coded K0003 (caught, fix-up call, corrected); Lincoln Park goes silent after handoff, so the
-case falls back to Prairie State, which explicitly confirms a scheduled delivery. The patient's cost questions
-become a non-blocking callback in the human inbox.
+case falls back to Prairie State, which explicitly confirms a scheduled delivery. Eleanor's cost and folding
+questions go to the case coordinator, which asks the supplier, relays the answer and asks her to confirm it; the case
+keeps going meanwhile. If she does not explicitly accept the answer, the question becomes a callback in the human inbox.
+
+| `SCENARIO` | What it shows |
+|---|---|
+| `default` | All the supplier/PCP friction above, plus the patient's questions answered by the coordinator |
+| `pcp_information` | Dr. Chen will sign once she has a copy of an existing PT evaluation: the order chase pauses, the coordinator gets it from the patient (with her permission), the office accepts it, the chase resumes |
+| `supplier_information` | A supplier needs a mobility assessment report before taking the case: patient → PCP → patient permission → supplier acceptance |
+| `escalation` | Dr. Chen wants a *new* mobility assessment: clinical work, so it goes straight to a human review |
 
 ### When the case needs a human
 
@@ -104,14 +113,21 @@ The inbox has two kinds of item:
 
 | Kind | Raised when | Case | Resolve with |
 |---|---|---|---|
-| **Review** (`HumanReviewWorkflow`, from Temporal) | no supplier confirmed, order stalled/needs info, no delivery confirmed, **technical failure** (LLM/provider/config errors that outlast retries) | paused | `decide retry` re-runs the step; `decide close` ends the case |
-| **Callback** (from `runtime/escalations.json`) | patient unreachable, has questions, or unclear on cost/next steps | keeps going | `done`; completing it never touches or reopens the case |
+| **Review** (`HumanReviewWorkflow`, from Temporal) | no supplier confirmed, order stalled, a supplier/PCP request that is clinical or the coordinator could not clear, no delivery confirmed, **technical failure** (LLM/provider/config errors that outlast retries) | paused | `decide retry` re-runs the step; `decide close` ends the case |
+| **Callback** (from `runtime/escalations.json`) | patient unreachable, unclear on cost/next steps, or her questions were not answered by the coordinator | keeps going | `done`; completing it never touches or reopens the case |
+
+Administrative requests (a copy of an existing report, a cost estimate) are worked by the coordinator first; only
+what it cannot clear, or anything needing clinical judgment, reaches this inbox.
 
 **Try it:** restart the worker with `SCENARIO=escalation uv run python -m mira.worker` and run `start_case`.
 About a minute in, the PCP office says Dr. Chen won't sign without a mobility assessment, and the case
-waits for you. In the default scenario, patient questions create a non-blocking callback instead (the case
-keeps going). Killing the worker mid-case and restarting it resumes the case where it left off; timers keep
+waits for you. Killing the worker mid-case and restarting it resumes the case where it left off; timers keep
 running on wall-clock time while the worker is down, so a long outage can legitimately trip an SLA escalation.
+
+**Model rate limits.** A free-tier model can run out of daily quota mid-case. Calls that still fail after
+retries become a *technical failure* review (e.g. `…:technical-pcp-order`); the case waits safely. Once the
+quota resets, `decide <escalation-id> retry` resumes that step. A full default run makes roughly 30–40 model
+requests.
 
 ## Tests
 
@@ -126,8 +142,9 @@ escalations closed by a human, a forced LLM-provider outage recovered by a human
 first answer acted on immediately. The fake LLM tests orchestration, not extraction quality. The test server
 binary is downloaded on first run.
 
-The full suite currently has **72 tests**, including provider routing, coordinator lifecycle, evaluator scoring,
-and all five integrated Temporal/mock-voice/DME scenarios plus a clinical-misroute guard. Live model results
+The full suite currently has **99 tests**, including provider routing, coordinator lifecycle, evaluator scoring,
+real-case supplier/PCP/patient coordination, clinical gates, fallback reviews that target the right task, and
+contact/action budgets. Historical live model results
 are documented separately in [COORDINATOR_EVAL_RESULTS.md](COORDINATOR_EVAL_RESULTS.md) and
 [SIMULATION_RESULTS.md](SIMULATION_RESULTS.md).
 
@@ -155,6 +172,9 @@ timing ("usually four days") does not count.
 ```
 mira/
   workflows/  case.py (orchestrator) · sourcing.py · pcp_order.py · fulfillment.py · patient.py · human_review.py · common.py
+              requirement_gate.py  pause a step until the coordinator clears a supplier/PCP/patient requirement
+  coordinator/  workflow.py · agent.py (Deep Agents planner) · store.py (JSON case document + transition checks)
+                knowledge.py (requirement evidence graph) · communication.py (coordinator calls)
   activities.py       place_call: voice agent → LLM extraction → CallOutcome  (voice-calls queue)
   case_activities.py  ranking, mock fax, escalations, event log               (dme-cases queue)
   policy.py           deterministic rules — where AI is deliberately kept out

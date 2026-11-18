@@ -1,12 +1,19 @@
+from collections.abc import Awaitable, Callable
+
 from temporalio import workflow
 
 with workflow.unsafe.imports_passed_through():
-    from mira.models import CallDisposition, CallOutcome, CallPurpose, CallRequest, Case, PatientContact
+    from mira.models import (
+        CallDisposition, CallOutcome, CallPurpose, CallRequest, Case, InformationRequirement, PatientContact,
+    )
     from mira.policy import MIN_EXTRACTION_CONFIDENCE
     from mira.workflows.common import call_id, escalate, log_event, place_call, sleep_days
 
 MAX_PATIENT_CALLS = 3
 PATIENT_RETRY_DAYS = 0.5
+
+# Hands a question to the case coordinator: (source call id, requirement) -> coordinator task id.
+QuestionRouter = Callable[[str, InformationRequirement], Awaitable[str]]
 
 
 def cost_share_point(supplier_name: str, accepts_assignment: bool | None) -> str:
@@ -44,7 +51,8 @@ class PatientLiaison:
     def __init__(self) -> None:
         self._calls = 0
 
-    async def update(self, case: Case, milestone: str, points: list[str], seconds_per_day: float) -> PatientContact:
+    async def update(self, case: Case, milestone: str, points: list[str], seconds_per_day: float,
+                     route_question: QuestionRouter | None = None) -> PatientContact:
         outcome = await self._reach(case, points, seconds_per_day)
         if outcome is None:
             escalation_id = await escalate(
@@ -61,18 +69,24 @@ class PatientLiaison:
             or bool(result.open_questions)
         )
         escalation_id = None
-        if needs_follow_up:
+        requirement_task_id = None
+        question = result.information_request if result and outcome.confidence >= MIN_EXTRACTION_CONFIDENCE else None
+        if needs_follow_up and route_question and question:
+            requirement_task_id = await route_question(outcome.call_id, question)
+        elif needs_follow_up:
             questions = "; ".join(result.open_questions) if result else "call unclear"
             escalation_id = await escalate(
                 case.case_id, f"patient-questions-{milestone}", "Patient has questions a person should answer", blocking=False, questions=questions
             )
-        await log_event(case.case_id, "patient_updated", milestone=milestone, follow_up=needs_follow_up)
+        await log_event(case.case_id, "patient_updated", milestone=milestone, follow_up=needs_follow_up,
+                        routed_to_coordinator=requirement_task_id is not None)
         return PatientContact(
             milestone=milestone,
             reached=True,
             understood_cost_share=result.understood_cost_share if result else None,
             open_questions=list(result.open_questions) if result else [],
             escalation_id=escalation_id,
+            requirement_task_id=requirement_task_id,
         )
 
     async def _reach(self, case: Case, points: list[str], seconds_per_day: float) -> CallOutcome | None:

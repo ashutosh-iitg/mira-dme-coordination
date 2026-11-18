@@ -12,8 +12,11 @@ with workflow.unsafe.imports_passed_through():
         HandoffResult,
         SupplierHandoff,
         SupplierVerdict,
+        RequirementResolution,
     )
-    from mira.policy import FollowupDecision, assess_followup, claim_code_problems
+    from mira.policy import FollowupDecision, assess_followup, claim_code_problems, requirement_to_coordinate
+    from mira.policy import MIN_EXTRACTION_CONFIDENCE
+    from mira.workflows.requirement_gate import RequirementGate, supplier_contact
     from mira.workflows.common import (
         CASE_ACTIVITY_TIMEOUT,
         DEFAULT_RETRY,
@@ -34,6 +37,12 @@ class FulfillmentWorkflow:
     def __init__(self) -> None:
         self._attempts: list[FulfillmentAttempt] = []
         self._state = "starting"
+        self._requirements = RequirementGate()
+        self._blocked_escalation_id: str | None = None
+
+    @workflow.signal
+    def requirement_resolved(self, result: RequirementResolution) -> None:
+        self._requirements.resolve(result)
 
     @workflow.query
     def state(self) -> str:
@@ -49,6 +58,9 @@ class FulfillmentWorkflow:
         for candidate in inp.candidates:
             attempt = await self._hand_off(inp, candidate)
             self._attempts.append(attempt)
+            if self._blocked_escalation_id:
+                return FulfillmentResult(scheduled_with=None, delivery_eta_days=None, attempts=list(self._attempts),
+                                         escalation_id=self._blocked_escalation_id)
             if attempt.result is HandoffResult.SCHEDULED:
                 self._state = f"delivery scheduled with {candidate.supplier.supplier_name}"
                 return FulfillmentResult(
@@ -94,6 +106,16 @@ class FulfillmentWorkflow:
                 )
             )
             connected_once = connected_once or outcome.disposition is CallDisposition.CONNECTED
+            requirement = requirement_to_coordinate(outcome.followup.information_request if outcome.followup else None)
+            if inp.coordinator_enabled and requirement and outcome.confidence >= MIN_EXTRACTION_CONFIDENCE:
+                self._state = f"coordinator resolving supplier requirement: {requirement.description}"
+                result = await self._requirements.wait(inp.case_id, supplier_contact(supplier), outcome.call_id, requirement, inp.seconds_per_day)
+                if not result.cleared:
+                    self._blocked_escalation_id = await escalate(inp.case_id, "fulfillment-information-review",
+                        "Supplier fulfillment requirement needs human review", task_id=result.task_id, reason_detail=result.reason)
+                    return FulfillmentAttempt(supplier_name=supplier.supplier_name, phone=supplier.phone,
+                        result=HandoffResult.UNCONFIRMED, followup_calls=call_number)
+                continue  # Call the supplier again before marking delivery scheduled.
             decision = assess_followup(outcome)
             if decision in DECISION_TO_RESULT:
                 eta = outcome.followup.delivery_eta_days if outcome.followup else None

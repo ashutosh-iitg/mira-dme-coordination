@@ -1,4 +1,6 @@
-# End-to-end Temporal simulation results — 18 November 2026
+# Historical Temporal simulation results — 18 November 2026
+
+This records the earlier prerequisite composition at commit `15e84f6`. Its runner and six wrapper tests have since been removed because the actual `CaseWorkflow` now owns coordination. These results are historical evidence, not validation of the latest implementation. To reproduce the old runner, use that commit in a separate checkout; current demos use `mira.worker` and `mira.start_case`. Existing ignored runtime traces have been preserved.
 
 All five scenarios were run sequentially through a real local Temporal time-skipping server. The coordinator and DME call extraction used live Groq `openai/gpt-oss-120b`; voice, fax, appointment booking, supplier availability, external confirmations and human responses were mocked.
 
@@ -38,12 +40,12 @@ Open `runtime/e2e/temporal-groq-five-cases-20261118/index.html` for the filterab
 - `histories/`: independent parent/coordinator/DME or human-review histories, including original UTC event times.
 - `state/` and `result.json`: JSON lifecycle state and final outcomes.
 
-The run contains **27 exported Temporal histories**. Runtime artifacts and credentials remain ignored by Git. See `SIMULATION.md` for the exact composition and reproduction command.
+The run contains **27 exported Temporal histories**. Runtime artifacts and credentials remain ignored by Git. The original composition and reproduction command are available in `SIMULATION.md` at commit `15e84f6`.
 
 ## Interpretation and limits
 
-The earlier direct-activity evaluation failed the clinical-routing scenario; this integrated run passed it without adding a clinical prompt fix. A successful second run is not proof that the earlier routing weakness is resolved. The regression suite explicitly tests a misrouted clinical request and verifies that the simulation guard prevents DME fulfillment and hands it to human review.
+The earlier direct-activity evaluation failed the clinical-routing scenario; this integrated run passed it without adding a clinical prompt fix. A successful second run is not proof that the earlier routing weakness is resolved. The historical regression suite tested a misrouted clinical request against its simulation guard. Current tests instead exercise clinical/unknown requirements directly inside the real case.
 
 The mock-provider supplies typed consent/report/quote evidence alongside callback transcripts. Those callback facts are not claimed to have been inferred by the live extractor. DME screening, PCP status, delivery confirmation and patient-update call extraction do use the live selected model. External outcomes are scripted and this is one pass per case, not a reliability estimate.
 
-Automated verification: **72 tests passed**, including all five complete Temporal/mock-voice/DME paths and the clinical-misroute guard.
+Automated verification at the time: **72 tests passed**, including all five complete Temporal/mock-voice/DME paths and the clinical-misroute guard.

@@ -1,12 +1,29 @@
 """Deterministic business rules. AI is deliberately kept out of these decisions."""
 
+import re
 from dataclasses import dataclass
 from enum import StrEnum
 
-from mira.models import CallDisposition, CallOutcome, DeliveryStatus, SupplierVerdict, WrittenOrder
+from mira.models import (
+    CallDisposition, CallOutcome, DeliveryStatus, InformationRequirement, SupplierVerdict, WrittenOrder,
+)
 
 MIN_EXTRACTION_CONFIDENCE = 0.6
 REQUIRED_DESCRIPTION_TERM = "wheelchair"
+# The case itself chases the PCP for the signed written order and sends it at handoff.
+STANDARD_ORDER_REQUEST = re.compile(r"\b(?:(?:standard |detailed )?written order|signed order|swo)\b", re.IGNORECASE)
+
+
+def requirement_to_coordinate(requirement: InformationRequirement | None) -> InformationRequirement | None:
+    """A supplier's request worth a coordinator task, or None when the case already provides it.
+
+    Suppliers routinely say \"just get us the written order\"; that is the normal handoff, not an extra requirement,
+    and chasing it through the patient or PCP again would stall the case.
+    """
+    if requirement is None:
+        return None
+    text = f"{requirement.description} {requirement.document_type or ''}"
+    return None if STANDARD_ORDER_REQUEST.search(text) else requirement
 
 
 class ScreenDecision(StrEnum):
@@ -28,6 +45,8 @@ def assess_supplier_call(outcome: CallOutcome, equipment_code: str) -> SupplierA
     screen = outcome.supplier
     if screen is None or outcome.confidence < MIN_EXTRACTION_CONFIDENCE:
         return SupplierAssessment(ScreenDecision.RETRY, f"call unclear (confidence {outcome.confidence:.2f})")
+    if screen.information_request is not None:
+        return SupplierAssessment(ScreenDecision.RETRY, "supplier information requirement remains unresolved")
 
     if screen.accepting_new_medicare_patients is False:
         return SupplierAssessment(ScreenDecision.REJECTED, "not accepting new Medicare patients")
@@ -65,6 +84,8 @@ def assess_followup(outcome: CallOutcome) -> FollowupDecision:
     if outcome.disposition is not CallDisposition.CONNECTED or followup is None:
         return FollowupDecision.RETRY
     if outcome.confidence < MIN_EXTRACTION_CONFIDENCE:
+        return FollowupDecision.RETRY
+    if followup.information_request is not None:
         return FollowupDecision.RETRY
     if followup.delivery_status is DeliveryStatus.DECLINED:
         return FollowupDecision.DECLINED

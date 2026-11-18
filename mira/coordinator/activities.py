@@ -4,7 +4,7 @@ from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
 from mira.coordinator.models import (
-    ActionKind, CaseDocument, Decision, ProposedAction, Snapshot, SyncRequest, TaskStatus, TurnRequest,
+    CaseDocument, Decision, ProposedAction, Snapshot, SyncRequest, TaskStatus, TurnRequest,
 )
 from mira.coordinator.store import CoordinatorError, JsonCaseStore, snapshot
 
@@ -56,22 +56,25 @@ class CoordinatorActivities:
         except CoordinatorError as exc:
             # A rejected proposal becomes a visible review, never a fabricated success.
             # Model output is not trusted to grant its own preconditions.
-            task = next((t for t in doc.tasks.values() if t.status is TaskStatus.READY), None)
-            if task is None or doc.version != decision.expected_version:
+            if doc.version != decision.expected_version:
                 return snapshot(doc)  # Concurrent updates invalidate proposals, not newer state.
-            return self.store.apply(request, doc.version, ProposedAction(
-                task_id=task.task_id, kind=ActionKind.REVIEW, reason=f"Proposal rejected: {exc}",
-            ))
+            targeted = doc.tasks.get(action.task_id)
+            if targeted is not None and targeted.status is TaskStatus.READY:
+                return self.store.review_tasks(request, doc.version, [action.task_id], f"Proposal rejected: {exc}")
+            # The proposal names no ready task, so it cannot be pinned on one. Re-planning would
+            # likely repeat it; pause every ready task with the reason instead.
+            return self.store.review_tasks(request, doc.version, _ready_task_ids(doc),
+                                           f"Coordinator proposed an action for unknown or non-ready task {action.task_id!r}: {exc}")
 
     @activity.defn
     async def failure(self, request: TurnRequest) -> Snapshot:
         doc = self.store.read(request.case_id)
         if request.turn_id in doc.turns:
             return snapshot(doc)
-        task = next((t for t in doc.tasks.values() if t.status is TaskStatus.READY), None)
-        if task is None:
-            return snapshot(doc)
-        return self.store.apply(request, doc.version, ProposedAction(
-            task_id=task.task_id, kind=ActionKind.REVIEW,
-            reason="Coordinator model unavailable or turn failed after retries; inspect worker logs and resume after recovery",
-        ))
+        # A failed turn chose no task, so every task waiting on the model is equally blocked.
+        return self.store.review_tasks(request, doc.version, _ready_task_ids(doc),
+            "Coordinator model unavailable or turn failed after retries; inspect worker logs and resume after recovery")
+
+
+def _ready_task_ids(doc: CaseDocument) -> list[str]:
+    return [task.task_id for task in doc.tasks.values() if task.status is TaskStatus.READY]

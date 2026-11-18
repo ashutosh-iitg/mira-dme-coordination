@@ -1,5 +1,5 @@
 {
-  "description": "Eleanor's case with realistic friction: first supplier not taking Medicare patients, one out of stock, one no-answer-then-yes that later goes silent, PCP office loses the first request, patient misses the first update call. Unscripted suppliers never pick up.",
+  "description": "Eleanor's case with realistic friction: first supplier not taking Medicare patients, one out of stock, one no-answer-then-yes that later goes silent, PCP office loses the first request, patient misses the first update call. Unscripted suppliers never pick up. The patient's cost and folding questions go to the case coordinator, which gets the answer from the supplier and confirms it with her.",
   "parties": {
     "(312) 555-0142": {
       "name": "Lakeshore Home Medical Equipment",
@@ -16,16 +16,30 @@
       "name": "Lincoln Park DME Services",
       "calls": {
         "supplier_screen": [
-          { "disposition": "no_answer" },
+          {
+            "disposition": "no_answer"
+          },
           {
             "disposition": "connected",
             "transcript": "Supplier: Lincoln Park DME, Marcus speaking.\nAgent: Hi Marcus, this is Mira, an automated care coordinator calling for Eleanor Martinez. Original Medicare, no supplemental. She needs a standard manual wheelchair, K0001, delivered to 60614. Are you taking new Medicare patients and do you have one in stock?\nSupplier: Yep, we take Medicare. 60614 is right down the street from us. We've got a few of the basic K0001 chairs on the floor.\nAgent: Great. How soon could you deliver once you have the signed order?\nSupplier: Two, three days tops. Send the order over and we'll get her on the schedule.\nAgent: So I can tell her you'll take her on?\nSupplier: Yeah, put us down."
           }
         ],
         "supplier_followup": [
-          { "disposition": "no_answer" },
-          { "disposition": "voicemail" },
-          { "disposition": "no_answer" }
+          {
+            "disposition": "no_answer"
+          },
+          {
+            "disposition": "voicemail"
+          },
+          {
+            "disposition": "no_answer"
+          }
+        ],
+        "coordination": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: Lincoln Park DME Services, this is Tom.\nAgent: Hi Tom, this is Mira for Eleanor Martinez, the standard manual wheelchair, K0001. She asked what her 20 percent actually comes to, and whether someone will show her how to fold the chair.\nSupplier: The Medicare-approved amount for a K0001 is about $280, so with no supplemental plan and her Part B deductible met, her 20 percent is about $56, billed after delivery. We accept assignment. And yes, our driver shows every patient how to fold and lock it at delivery."
+          }
         ]
       }
     },
@@ -53,6 +67,12 @@
           {
             "disposition": "connected",
             "transcript": "Supplier: Prairie State Medical, Priya.\nAgent: Hi Priya, Mira again, following up on Eleanor Martinez's K0001 wheelchair.\nSupplier: Oh yes, we got the order from Dr. Chen's office this morning. Eligibility checks out. She's on the truck for Tuesday, so about four days.\nAgent: Perfect, thank you."
+          }
+        ],
+        "coordination": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: Prairie State Medical Supply, this is Tom.\nAgent: Hi Tom, this is Mira for Eleanor Martinez, the standard manual wheelchair, K0001. She asked what her 20 percent actually comes to, and whether someone will show her how to fold the chair.\nSupplier: The Medicare-approved amount for a K0001 is about $280, so with no supplemental plan and her Part B deductible met, her 20 percent is about $56, billed after delivery. We accept assignment. And yes, our driver shows every patient how to fold and lock it at delivery."
           }
         ]
       }
@@ -86,7 +106,9 @@
       "name": "Eleanor Martinez (patient)",
       "calls": {
         "patient_update": [
-          { "disposition": "no_answer" },
+          {
+            "disposition": "no_answer"
+          },
           {
             "disposition": "connected",
             "transcript": "Patient: Hello?\nAgent: Hi Mrs. Martinez, this is Mira, the automated care coordinator working on your wheelchair. Your doctor's office is preparing the written order and we've found a supplier who can deliver.\nPatient: Oh good. But am I going to get a bill for the whole chair? I really can't afford that.\nAgent: Medicare Part B covers most of it. You'd typically owe about 20 percent.\nPatient: Twenty percent of what though? Nobody told me a number. And will someone show me how to fold it?\nAgent: I'll make sure someone follows up on both of those."
@@ -94,6 +116,12 @@
           {
             "disposition": "connected",
             "transcript": "Patient: Hello?\nAgent: Hi Mrs. Martinez, it's Mira. Your wheelchair is scheduled for delivery Tuesday from Prairie State Medical Supply. You'll owe about 20 percent of the Medicare-approved amount, and the supplier will bill you after delivery.\nPatient: Tuesday, okay. Twenty percent, they'll send the bill. Got it, thank you dear."
+          }
+        ],
+        "coordination": [
+          {
+            "disposition": "connected",
+            "transcript": "Patient: Hello?\nAgent: Hi Mrs. Martinez, it's Mira. The supplier says the Medicare-approved amount is about $280, so your 20 percent is about $56, billed after delivery, and the driver will show you how to fold and lock the chair.\nPatient: About fifty-six dollars, after delivery, and they'll show me how to fold it. Okay, that answers both of my questions. Thank you."
           }
         ]
       }

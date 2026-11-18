@@ -16,7 +16,10 @@ with workflow.unsafe.imports_passed_through():
         OrderOutcomeStatus,
         OrderRequestFax,
         OrderResult,
+        PartyContact,
+        PcpOrderResult,
         PcpOrderStatus,
+        RequirementResolution,
         WrittenOrder,
     )
     from mira.policy import MIN_EXTRACTION_CONFIDENCE, validate_order
@@ -30,10 +33,12 @@ with workflow.unsafe.imports_passed_through():
         place_call,
         sleep_days,
     )
+    from mira.workflows.requirement_gate import RequirementGate
 
 
 MIN_WAIT_DAYS = 1.0
 MAX_WAIT_MULTIPLIER = 2
+MAX_REQUIREMENT_ROUNDS = 3
 
 
 @dataclass(frozen=True)
@@ -54,10 +59,16 @@ class PcpOrderWorkflow:
         self._nudges = 0
         self._contact_name: str | None = None
         self._next_wait_days: float | None = None
+        self._requirements = RequirementGate()
+        self._requirement_rounds = 0
 
     @workflow.signal
     def order_received(self, order: WrittenOrder) -> None:
         self._inbound_order = order
+
+    @workflow.signal
+    def requirement_resolved(self, result: RequirementResolution) -> None:
+        self._requirements.resolve(result)
 
     @workflow.query
     def state(self) -> str:
@@ -146,15 +157,39 @@ class PcpOrderWorkflow:
         if status is PcpOrderStatus.NOT_RECEIVED:
             await self._fax_request(inp, "office reports request never received")
         elif status is PcpOrderStatus.NEEDS_INFO:
-            escalation_id = await escalate(
-                inp.case_id, "pcp-needs-info", "PCP office needs information before signing", notes=pcp.notes if pcp else ""
-            )
-            return NudgeStep(escalation_id=escalation_id)
+            return await self._handle_needs_info(inp, outcome, pcp)
         elif status is PcpOrderStatus.SIGNED_AND_SENT:
             return NudgeStep(order=await self._check_fax_inbox(inp))
         elif status is PcpOrderStatus.IN_PROGRESS and pcp and pcp.expected_in_days:
             self._next_wait_days = min(max(float(pcp.expected_in_days), MIN_WAIT_DAYS), inp.nudge_interval_days * MAX_WAIT_MULTIPLIER)
         return NudgeStep()
+
+    async def _handle_needs_info(self, inp: OrderInput, outcome: CallOutcome, pcp: PcpOrderResult) -> NudgeStep:
+        """Hand an administrative request to the case coordinator; anything it can't clear goes to a human."""
+        requirement = pcp.information_request
+        detail = ""
+        if inp.coordinator_enabled and requirement and self._requirement_rounds < MAX_REQUIREMENT_ROUNDS:
+            self._requirement_rounds += 1
+            self._state = f"coordinator resolving PCP requirement: {requirement.description}"
+            requester = PartyContact(role="pcp", name=f"{inp.pcp.practice} ({inp.pcp.name})", phone=inp.pcp.phone)
+            result = await self._requirements.wait(inp.case_id, requester, outcome.call_id, requirement, inp.seconds_per_day)
+            if result.cleared:
+                return await self._ask_to_sign(inp, result)
+            detail = result.reason
+        escalation_id = await escalate(
+            inp.case_id, "pcp-needs-info", "PCP office needs information before signing", notes=pcp.notes, reason_detail=detail
+        )
+        return NudgeStep(escalation_id=escalation_id)
+
+    async def _ask_to_sign(self, inp: OrderInput, result: RequirementResolution) -> NudgeStep:
+        self._nudges += 1
+        self._state = "PCP accepted the requested information; asking the office to sign"
+        points = [
+            *self._nudge_points(inp, []),
+            f"You accepted {result.accepted_reference} as the information you needed; please sign and send the written order",
+        ]
+        outcome = await self._call_until_connected(inp, CallPurpose.PCP_ORDER_NUDGE, points)
+        return await self._act_on_response(inp, outcome, f"after requirement {result.task_id}")
 
     async def _call_until_connected(self, inp: OrderInput, purpose: CallPurpose, points: list[str]) -> CallOutcome | None:
         for try_number in range(1, inp.max_call_attempts + 1):

@@ -12,8 +12,11 @@ with workflow.unsafe.imports_passed_through():
         Supplier,
         SupplierStatus,
         SupplierVerdict,
+        RequirementResolution,
     )
-    from mira.policy import ScreenDecision, assess_supplier_call, order_candidates
+    from mira.policy import ScreenDecision, assess_supplier_call, order_candidates, requirement_to_coordinate
+    from mira.policy import MIN_EXTRACTION_CONFIDENCE
+    from mira.workflows.requirement_gate import RequirementGate, supplier_contact
     from mira.workflows.common import (
         CASE_ACTIVITY_TIMEOUT,
         DEFAULT_RETRY,
@@ -39,6 +42,12 @@ class SupplierSourcingWorkflow:
 
     def __init__(self) -> None:
         self._verdicts: dict[str, SupplierVerdict] = {}
+        self._requirements = RequirementGate()
+        self._blocked_escalation_id: str | None = None
+
+    @workflow.signal
+    def requirement_resolved(self, result: RequirementResolution) -> None:
+        self._requirements.resolve(result)
 
     @workflow.query
     def verdicts(self) -> list[SupplierVerdict]:
@@ -71,6 +80,8 @@ class SupplierSourcingWorkflow:
                 attempt = attempts.get(supplier.phone, 0) + 1
                 attempts[supplier.phone] = attempt
                 verdict = await self._screen(inp, supplier, attempt, distances[supplier.phone])
+                if self._blocked_escalation_id:
+                    return SourcingResult(qualified=[], others=list(self._verdicts.values()), escalation_id=self._blocked_escalation_id)
                 if verdict.status is SupplierStatus.QUALIFIED:
                     qualified.append(verdict)
                 elif verdict.status is SupplierStatus.UNREACHABLE and attempt < inp.max_attempts_per_supplier:
@@ -91,6 +102,24 @@ class SupplierSourcingWorkflow:
             talking_points=_screen_talking_points(inp),
         )
         outcome = await place_call(request)
+        for round_number in range(3):
+            requirement = requirement_to_coordinate(outcome.supplier.information_request if outcome.supplier else None)
+            if not (inp.coordinator_enabled and requirement and outcome.confidence >= MIN_EXTRACTION_CONFIDENCE):
+                break
+            result = await self._requirements.wait(inp.case_id, supplier_contact(supplier), request.call_id, requirement, inp.seconds_per_day)
+            if not result.cleared:
+                self._blocked_escalation_id = await escalate(inp.case_id, "supplier-information-review",
+                    "Supplier information requirement needs human review", task_id=result.task_id, reason_detail=result.reason)
+                break
+            # Acceptance clears only this requirement. Recheck qualification against the supplier's current response.
+            request = request.model_copy(update={"call_id": f"{request.call_id}:recheck-{round_number + 1}",
+                "attempt": request.attempt + 1,
+                "talking_points": [*_screen_talking_points(inp), f"You accepted {result.accepted_reference}; re-confirm the case can proceed"]})
+            outcome = await place_call(request)
+        if (inp.coordinator_enabled and outcome.supplier and requirement_to_coordinate(outcome.supplier.information_request)
+            and not self._blocked_escalation_id):
+            self._blocked_escalation_id = await escalate(inp.case_id, "supplier-information-budget",
+                "Supplier requirement remains unresolved after bounded clarification rounds")
         assessment = assess_supplier_call(outcome, inp.equipment.hcpcs_code)
         status = {
             ScreenDecision.QUALIFIED: SupplierStatus.QUALIFIED,
@@ -102,7 +131,7 @@ class SupplierSourcingWorkflow:
             distance_miles=distance,
             status=status,
             reason=assessment.reason,
-            attempts=attempt,
+            attempts=request.attempt,
             delivery_eta_days=outcome.supplier.delivery_eta_days if outcome.supplier else None,
             accepts_assignment=outcome.supplier.accepts_assignment if outcome.supplier else None,
             call_id=request.call_id,

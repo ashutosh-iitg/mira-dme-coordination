@@ -3,12 +3,13 @@ from enum import StrEnum
 
 from pydantic import Field
 
-from mira.models import Frozen
+from mira.models import CallOutcome, CallRequest, CoordinationObservation, Frozen, RequirementRequest
 
 
 class TaskKind(StrEnum):
     PT = "pt_followup"
     COST = "cost_clarification"
+    REQUIREMENT = "information_requirement"
 
 
 class TaskStatus(StrEnum):
@@ -36,6 +37,7 @@ class EventKind(StrEnum):
     QUOTE_ACCEPTED = "quote_accepted"
     RESUME = "human_resume"
     CANCEL = "human_cancel"
+    OBSERVATION = "coordination_observation"
 
 
 class FollowupTask(Frozen):
@@ -47,9 +49,11 @@ class FollowupTask(Frozen):
     waiting_for: Party | None = None
     next_check_at: datetime | None = None
     contacts: int = 0
+    actions_taken: int = 0
     booking_reference: str | None = None
     booked_slot_id: str | None = None
     review_reason: str = ""
+    requirement_request: RequirementRequest | None = None
 
 
 class IncomingEvent(Frozen):
@@ -64,6 +68,7 @@ class IncomingEvent(Frozen):
     accepts_assignment: bool | None = None
     slot_starts_at: datetime | None = None
     offer_expires_at: datetime | None = None
+    observation: CoordinationObservation | None = None
 
 
 class AppointmentSlot(Frozen):
@@ -78,6 +83,43 @@ class ActionKind(StrEnum):
     COMPLETE = "complete"
     REVIEW = "request_human_review"
     WAIT = "wait"
+    FORWARD = "forward_information"
+
+
+class Contact(Frozen):
+    name: str
+    phone: str
+
+
+class RequirementNode(Frozen):
+    task_id: str
+    requester_role: str
+    requester_phone: str
+    description: str
+    status: str = "open"
+    current_reference: str | None = None
+    patient_confirmed_reference: str | None = None
+    forwarded_reference: str | None = None
+    accepted_reference: str | None = None
+    accepted_event_id: str | None = None
+
+    @property
+    def requester(self) -> str:
+        return f"{self.requester_role}:{self.requester_phone}"
+
+
+class DocumentNode(Frozen):
+    reference: str
+    document_type: str | None = None
+    patient_name: str | None = None
+    verification_status: str = "not_checked"
+    source_event_id: str
+
+
+class KnowledgeGraph(Frozen):
+    requirements: dict[str, RequirementNode] = Field(default_factory=dict)
+    documents: dict[str, DocumentNode] = Field(default_factory=dict)
+    edges: list[dict] = Field(default_factory=list)
 
 
 class ProposedAction(Frozen):
@@ -102,6 +144,9 @@ class CaseDocument(Frozen):
     rejected_events: list[dict] = Field(default_factory=list)
     actions: list[dict] = Field(default_factory=list)
     turns: dict[str, dict] = Field(default_factory=dict)
+    contacts: dict[str, Contact] = Field(default_factory=dict)
+    knowledge: KnowledgeGraph = Field(default_factory=KnowledgeGraph)
+    communication_results: dict[str, CallOutcome] = Field(default_factory=dict)
 
 
 class CoordinatorInput(Frozen):
@@ -112,6 +157,8 @@ class CoordinatorInput(Frozen):
     initial_events: list[IncomingEvent] = Field(default_factory=list)
     observer_workflow_id: str | None = None
     stop_when_settled: bool = False
+    contacts: dict[str, Contact] = Field(default_factory=dict)
+    communication_enabled: bool = False
 
 
 class Snapshot(Frozen):
@@ -121,6 +168,7 @@ class Snapshot(Frozen):
     next_check_at: datetime | None
     tasks: list[FollowupTask]
     last_action: dict | None = None
+    knowledge: KnowledgeGraph = Field(default_factory=KnowledgeGraph)
 
 
 class SyncRequest(Frozen):
@@ -142,3 +190,14 @@ class Decision(Frozen):
     request: TurnRequest
     expected_version: int
     action: ProposedAction
+
+
+class CommunicationRequest(Frozen):
+    case_id: str
+    action_id: str
+
+
+class CommunicationResult(Frozen):
+    request: CommunicationRequest
+    outcome: CallOutcome
+    now: datetime

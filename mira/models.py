@@ -1,5 +1,6 @@
 from datetime import date
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -46,12 +47,55 @@ class Supplier(Frozen):
     zip_code: str
 
 
+class InformationRequirement(Frozen):
+    """Something a party needs before it will proceed, e.g. a document, a fact, or an answer."""
+
+    description: str = Field(min_length=1, max_length=2000)
+    document_type: str | None = None
+    clinical_decision_required: bool | None = None
+
+
+RequesterRole = Literal["supplier", "pcp", "patient"]
+
+
+class PartyContact(Frozen):
+    role: RequesterRole
+    name: str
+    phone: str
+
+
+class RequirementRequest(Frozen):
+    """A paused step asks the case coordinator to satisfy one party's requirement.
+
+    `other_contacts` adds parties the coordinator may call that are not in its case-wide contacts,
+    e.g. the supplier a patient's cost question is about.
+    """
+
+    task_id: str
+    case_id: str
+    requester_workflow_id: str
+    source_call_id: str
+    requester: PartyContact
+    requirement: InformationRequirement
+    other_contacts: list[PartyContact] = Field(default_factory=list)
+
+
+class RequirementResolution(Frozen):
+    task_id: str
+    cleared: bool
+    evidence_event_id: str | None = None
+    accepted_reference: str | None = None
+    reason: str = ""
+    knowledge_version: int | None = None
+
+
 class CallPurpose(StrEnum):
     SUPPLIER_SCREEN = "supplier_screen"
     SUPPLIER_FOLLOWUP = "supplier_followup"
     PCP_ORDER_REQUEST = "pcp_order_request"
     PCP_ORDER_NUDGE = "pcp_order_nudge"
     PATIENT_UPDATE = "patient_update"
+    COORDINATION = "coordination"
 
 
 class CallDisposition(StrEnum):
@@ -68,6 +112,8 @@ class CallRequest(Frozen):
     phone: str
     attempt: int = 1
     talking_points: list[str] = Field(default_factory=list)
+    coordination_role: str | None = None
+    requirement_id: str | None = None
 
 
 class SupplierScreenResult(Frozen):
@@ -78,6 +124,7 @@ class SupplierScreenResult(Frozen):
     committed_to_deliver: bool | None
     accepts_assignment: bool | None = None
     notes: str
+    information_request: InformationRequirement | None = None
 
 
 class DeliveryStatus(StrEnum):
@@ -95,6 +142,21 @@ class FollowupResult(Frozen):
     delivery_status: DeliveryStatus
     delivery_eta_days: int | None = Field(default=None, ge=0)
     notes: str
+    information_request: InformationRequirement | None = None
+
+
+class CoordinationObservation(Frozen):
+    information: str | None = None
+    needs_provider: bool | None = None
+    document_reference: str | None = None
+    document_type: str | None = None
+    document_patient_name: str | None = None
+    sharing_authorized: bool | None = None
+    confirmed_reference: str | None = None
+    requester_accepted: bool | None = None
+    accepted_reference: str | None = None
+    clinical_decision_required: bool = False
+    notes: str = ""
 
 
 class PcpOrderStatus(StrEnum):
@@ -110,6 +172,7 @@ class PcpOrderResult(Frozen):
     contact_name: str | None
     expected_in_days: int | None
     notes: str
+    information_request: InformationRequirement | None = None
 
 
 class PatientUpdateResult(Frozen):
@@ -117,6 +180,7 @@ class PatientUpdateResult(Frozen):
     understood_cost_share: bool | None
     open_questions: list[str]
     notes: str
+    information_request: InformationRequirement | None = None
 
 
 class CallOutcome(Frozen):
@@ -130,6 +194,7 @@ class CallOutcome(Frozen):
     followup: FollowupResult | None = None
     pcp: PcpOrderResult | None = None
     patient: PatientUpdateResult | None = None
+    coordination: CoordinationObservation | None = None
 
 
 class WrittenOrder(Frozen):
@@ -206,6 +271,7 @@ class SourcingInput(Frozen):
     wanted_candidates: int = 2
     max_attempts_per_supplier: int = 3
     callback_delay_days: float = 1.0
+    coordinator_enabled: bool = False
 
 
 class SourcingResult(Frozen):
@@ -225,6 +291,7 @@ class OrderInput(Frozen):
     sla_days: float = 10.0
     max_call_attempts: int = 3
     no_answer_retry_days: float = 0.5
+    coordinator_enabled: bool = False
 
 
 class OrderOutcomeStatus(StrEnum):
@@ -282,6 +349,7 @@ class FulfillmentInput(Frozen):
     followup_after_days: float = 1.0
     max_followup_calls: int = 3
     followup_retry_days: float = 0.5
+    coordinator_enabled: bool = False
 
 
 class HandoffResult(StrEnum):
@@ -312,6 +380,7 @@ class PatientContact(Frozen):
     understood_cost_share: bool | None = None
     open_questions: list[str] = Field(default_factory=list)
     escalation_id: str | None = None
+    requirement_task_id: str | None = None
 
 
 class CaseOutcome(StrEnum):
@@ -336,6 +405,9 @@ class CaseStatus(Frozen):
     pending_reviews: list[PendingReview]
     supplier: str | None
     delivery_eta_days: int | None
+    coordinator_workflow_id: str | None = None
+    coordinator_state_id: str | None = None
+    pending_requirements: list[str] = Field(default_factory=list)
 
 
 class CaseSummary(Frozen):

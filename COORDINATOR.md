@@ -127,7 +127,7 @@ uv run python -m mira.coordinator close eleanor-followups
 
 `human_cancel` cancels one task. Ordinary inbound replies do not automatically clear a task awaiting human review.
 
-`start` and `add` accept `--escalation <id>` to attach the original escalation and its context as task provenance. This is an explicit bridge to the original assignment, not an automatic takeover: the original case's blocking human review remains open, and completing a coordinator task does not signal `retry` or mark the original case clinically ready. Existing voice scripts and DME workflows are unchanged. Automatic transfer and resumption of those cases is a subsequent integration step.
+`start` and `add` accept `--escalation <id>` to attach the original escalation as provenance. That manual bridge does not close its existing human review or mark a case clinically ready. Separately, DME sourcing and fulfillment now automatically signal supplier information requirements to one case-owned coordinator child. Its new `supplier_information` task supports patient/PCP/supplier loops and an evidence graph, with exact supplier acceptance required before the requesting workflow resumes. See [MIDRUN_COORDINATION.md](MIDRUN_COORDINATION.md); the voice agent remains mocked.
 
 ## Verification and scope
 
@@ -152,4 +152,4 @@ Tests cover the real Deep Agents graph using a fake tool-calling model, includin
 
 Live checks on 18 November: OpenRouter returned `429 free-models-per-day`; Groq's `qwen/qwen3.8-27b` was available but repeatedly produced malformed tool calls rejected by Groq. Switching to Groq's `openai/gpt-oss-120b` succeeded on the same generic appointment-availability prompt: the actual Deep Agents loop returned a schema-valid contact action with the correct task ID, patient recipient, reason and message. This is a smoke test, not a statistical model evaluation. Tests never need model credentials.
 
-This increment deliberately uses two task types and mocked communication/booking. Clinical-language handling is governed by the coordinator prompt; code enforces evidence, state, recipient and booking/closure constraints, not a complete medical safety policy. Real clinical use would require stronger review and integration controls. No voice-provider work, DB server, UI, portal access or custom JSON LangGraph checkpoint format was added.
+There are now three task types, all with mocked communication/booking. Supplier information tasks additionally require explicit administrative scope; clinical or unknown source flags trigger review before contact. Model extraction can still misclassify language, so this is not a complete medical safety policy. Real clinical use requires stronger review and integration controls. No voice-provider work, DB server, UI, portal access or custom JSON LangGraph checkpoint format was added.

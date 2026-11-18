@@ -6,7 +6,7 @@ The care advocate's hardest job is maintaining progress across unreliable handof
 
 The original `CaseWorkflow` sources suppliers and chases the PCP order in parallel, validates the returned order, hands it off, follows up with the supplier, falls back when needed, and updates the patient. A separate Deep Agents coordinator manages assessment/report and cost-clarification tasks. It chooses a next action from current evidence; application code validates and records the transition. Temporal owns waiting, retries, signals and execution history. A case resumes after a delayed reply without keeping a model call open.
 
-The integrated simulation makes coordinator completion a prerequisite for the existing DME workflow. This composition is implemented in the simulation parent; automatic takeover of every escalation in the original Cloud case is not yet implemented.
+The real case pauses when a supplier or PCP requests administrative information, or when the patient needs a cost clarification. One case-owned coordinator resolves the requirement across parties, records applicable patient permission and explicit requester acceptance in a shared evidence graph, then releases the waiting step. [MIDRUN_COORDINATION.md](MIDRUN_COORDINATION.md) details the supplier loop. Clinical or unclear requirements remain human work. The earlier prerequisite simulation runner has been removed now that coordination runs inside the real case.
 
 ## Technology and architecture
 
@@ -21,12 +21,13 @@ flowchart LR
     G --> M[Mock communication or booking]
     M --> I
     G --> H[Human review when required]
-    T -->|Follow-up completed in simulation| D[Existing DME case workflow]
+    D[CaseWorkflow] -->|Administrative requirement or patient question| T
     D --> P[Supplier sourcing and PCP order]
+    T -->|Exact requirement cleared| D
     P --> F[Handoff, delivery scheduling, patient update]
 ```
 
-The [architecture document](ARCHITECTURE.md) expands the diagram and ownership boundaries. The original demo uses Temporal Cloud. The five integrated simulations used real **local time-skipping Temporal servers**, not Cloud, so their executions do not appear in the Cloud UI. Their histories and timestamped traces were exported independently.
+The [architecture document](ARCHITECTURE.md) expands the diagram and ownership boundaries. The normal demo uses the configured Temporal Cloud connection. Automated workflow tests run these same case workflows on local time-skipping Temporal servers with scripted model responses. The earlier five-case live simulation is retained only as historical evidence, not a second application path.
 
 AI extracts observations and proposes administrative actions. Code checks supplier qualification, order consistency, explicit scheduling evidence, exact-slot consent, current-quote acceptance, stale state and task completion. Clinical assessment, prescription changes and medical-necessity decisions remain with qualified people. Passing order checks is not a coverage guarantee.
 
@@ -42,9 +43,9 @@ Scale across cases while serializing mutations within a case. A future document 
 
 ## Evidence and cuts
 
-The first live five-scenario evaluation passed **4/5**: a clinical request was misrouted into appointment questions. The integrated Temporal run passed **5/5**, with four delivery schedules and one human handoff, across 37 model requests and zero rate-limit responses. One no-proposal turn recovered through a Temporal retry. **72 automated tests pass.** The earlier failure remains a regression case; a successful rerun does not establish consistent clinical routing.
+The first live five-scenario evaluation passed **4/5**: a clinical request was misrouted into appointment questions. The historical prerequisite simulation passed **5/5**, with four delivery schedules and one human handoff, across 37 model requests and zero rate-limit responses. One no-proposal turn recovered through a Temporal retry. The current suite contains **99 automated tests**, covering the real case, rejection/correction, clinical/unknown-scope review, task-specific failure handling and bounded contacts. Live on Temporal Cloud with Groq, the PCP loop ran end to end: the office's request was classified administrative, the coordinator got the report reference and sharing permission from the patient, the office accepted it, and the order was signed. A live default run exposed two extraction gaps: a supplier's "just get us the written order" read as an extra requirement (now blocked by a deterministic policy check), and the patient's "that answers my question" not recorded as acceptance (the guard refused to clear it and it fell back to a callback; a prompt fix is not yet verified live because the model's daily quota ran out). The earlier clinical failure remains a limitation; a successful rerun does not establish consistent routing.
 
-Phone/voice, fax, booking, external confirmations and human actors remain mocked. Simulation callback evidence is fixture metadata; DME call extraction and coordinator decisions use the real model. The prototype ends at delivery scheduled. Real delivery confirmation, eligibility/portal access, claims, authentication, distributed storage and production deployment are cut. Full evidence and limitations are in [SIMULATION_RESULTS.md](SIMULATION_RESULTS.md).
+Phone/voice, fax, booking, external confirmations and human actors remain mocked. Normal demo call extraction and coordinator decisions use the real model; automated tests use scripted responses. The prototype ends at delivery scheduled. Real delivery confirmation, eligibility/portal access, claims, authentication, distributed storage and production deployment are cut. Historical evidence and limitations are in [SIMULATION_RESULTS.md](SIMULATION_RESULTS.md).
 
 ## Product evolution, in priority order
 
@@ -55,4 +56,4 @@ Phone/voice, fax, booking, external confirmations and human actors remain mocked
 5. **Voice agent.** Integrate one bounded call type first, with recordings/transcripts, identity and consent handling, call windows and receipts. Separate placing the call from interpreting it so an extraction retry does not redial the patient.
 6. **Additional tools and channels.** Add email, asynchronous chat, document/fax exchange, scheduling and authorized payer checks through the same event and action contracts. Correlate replies to the right case, preserve recipient permissions and avoid duplicate outreach across channels. The product should progressively remove administrative work while retaining a useful exception inbox for advocates and clinicians.
 
-**One more day:** address coordinator intent routing and its highest-risk guard gaps, add regression cases, and prepare the integrated scenarios for Cloud visibility with compressed timers. **Two weeks:** extend those guards into persistent dispatch/reconciliation and strengthen evaluation/observability; gate model changes on evidence. Begin a bounded voice integration only after those foundations pass. Additional channels follow the same reliability gate rather than a calendar promise.
+**One more day:** address coordinator intent routing and its highest-risk guard gaps, add regression cases, and verify the real-case scenarios on Cloud with compressed timers. **Two weeks:** extend those guards into persistent dispatch/reconciliation and strengthen evaluation/observability; gate model changes on evidence. Begin a bounded voice integration only after those foundations pass. Additional channels follow the same reliability gate rather than a calendar promise.

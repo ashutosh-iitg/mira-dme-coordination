@@ -23,7 +23,7 @@ class CallActivities:
         except ConfigError as exc:
             raise ApplicationError(str(exc), type="ConfigError", non_retryable=True) from exc
 
-        result = outcome.supplier or outcome.followup or outcome.pcp or outcome.patient
+        result = outcome.supplier or outcome.followup or outcome.pcp or outcome.patient or outcome.coordination
         self._events.append(
             request.case_id,
             "call_completed",

@@ -9,6 +9,7 @@ from mira.models import (
     CallPurpose,
     DeliveryStatus,
     FollowupResult,
+    InformationRequirement,
     Supplier,
     SupplierScreenResult,
     SupplierStatus,
@@ -21,6 +22,7 @@ from mira.policy import (
     assess_followup,
     assess_supplier_call,
     order_candidates,
+    requirement_to_coordinate,
     validate_order,
 )
 from tests.fakes import followup, supplier
@@ -168,3 +170,26 @@ def test_candidates_rank_same_day_first_and_unknown_eta_last() -> None:
     ranked = order_candidates([_verdict("unknown", None, 0.5), _verdict("four-days", 4, 1.0), _verdict("same-day", 0, 9.0)])
 
     assert [v.supplier.supplier_name for v in ranked] == ["same-day", "four-days", "unknown"]
+
+
+@pytest.mark.parametrize("description, document_type", [
+    ("Written order", "written order"),
+    ("Just get us the signed order", None),
+    ("Standard written order for K0001", None),
+    ("SWO from the PCP", None),
+])
+def test_requests_for_the_written_order_are_not_coordinator_work(description: str, document_type: str | None) -> None:
+    requirement = InformationRequirement(description=description, document_type=document_type, clinical_decision_required=False)
+
+    assert requirement_to_coordinate(requirement) is None
+
+
+@pytest.mark.parametrize("description, document_type", [
+    ("Patient mobility assessment report", "mobility assessment report"),
+    ("Proof of the patient's secondary insurance", None),
+    ("Copy of the prescription history from the pharmacy", None),
+])
+def test_other_supplier_requests_still_go_to_the_coordinator(description: str, document_type: str | None) -> None:
+    requirement = InformationRequirement(description=description, document_type=document_type, clinical_decision_required=False)
+
+    assert requirement_to_coordinate(requirement) is requirement

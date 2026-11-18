@@ -1,0 +1,276 @@
+{
+  "description": "Supplier pauses during screening for a report: patient -> PCP -> patient permission -> supplier acceptance -> re-screen -> fulfillment. Entirely mocked.",
+  "parties": {
+    "(312) 555-0142": {
+      "name": "Lakeshore Home Medical Equipment",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: Before proceeding, we need the patient mobility assessment report. Please obtain it from the patient or PCP and return it to us for explicit acceptance. We are not requesting a prescription change."
+          },
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ],
+        "coordination": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received and reviewed doc-ref-001. We explicitly accept doc-ref-001 as satisfying our mobility assessment report requirement. The information is acceptable for this administrative request."
+          }
+        ]
+      }
+    },
+    "(312) 555-0177": {
+      "name": "Windy City Mobility & DME",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(773) 555-0211": {
+      "name": "Prairie State Medical Supply",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(773) 555-0288": {
+      "name": "Northside CarePlus Equipment",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(312) 555-0301": {
+      "name": "ChicagoLand Durable Medical",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(312) 555-0319": {
+      "name": "Roosevelt Medical Supply Co",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(773) 555-0356": {
+      "name": "Halsted Home Health Supply",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(847) 555-0402": {
+      "name": "Midwest Mobility Solutions",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(773) 555-0447": {
+      "name": "Belmont Medical Equipment",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(312) 555-0468": {
+      "name": "Lincoln Park DME Services",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(312) 555-0490": {
+      "name": "South Loop Medical Supply",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(847) 555-0533": {
+      "name": "Evanston Home Medical",
+      "calls": {
+        "supplier_screen": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We are Medicare enrolled, accept new Medicare patients and assignment, have K0001 in stock, serve ZIP 60614, and explicitly agree to take this case. Delivery is two days after the signed order."
+          }
+        ],
+        "supplier_followup": [
+          {
+            "disposition": "connected",
+            "transcript": "Supplier: We received the signed K0001 order. Delivery is booked on our schedule for two days from now."
+          }
+        ]
+      }
+    },
+    "(312) 555-0198": {
+      "name": "Sunrise Family Medicine",
+      "calls": {
+        "pcp_order_request": [
+          {
+            "disposition": "connected",
+            "transcript": "Office: The formal signed K0001 order is ready and has been sent."
+          }
+        ],
+        "pcp_order_nudge": [
+          {
+            "disposition": "connected",
+            "transcript": "Office: The signed K0001 order has been sent."
+          }
+        ],
+        "coordination": [
+          {
+            "disposition": "connected",
+            "transcript": "Office: The existing report reference is doc-ref-001. Its document type is mobility assessment report and its patient is Eleanor Martinez. We are providing the document reference, not asking you to interpret its clinical findings."
+          }
+        ]
+      }
+    },
+    "(312) 555-0100": {
+      "name": "Eleanor Martinez",
+      "calls": {
+        "patient_update": [
+          {
+            "disposition": "connected",
+            "transcript": "Patient: I understand the next steps and the approximate cost share, conditional on assignment and the deductible. I have no questions. I will be available for the supplier delivery."
+          }
+        ],
+        "coordination": [
+          {
+            "disposition": "connected",
+            "transcript": "Patient: I do not have the requested report. Please ask my PCP for it, then come back to me before sharing it."
+          },
+          {
+            "disposition": "connected",
+            "transcript": "Patient: I confirm document reference doc-ref-001 is mine and explicitly authorize sharing that exact reference with the requesting supplier for this requirement."
+          }
+        ]
+      }
+    }
+  },
+  "written_orders": [
+    {
+      "hcpcs_code": "K0001",
+      "item_description": "Standard manual wheelchair",
+      "quantity": 1,
+      "patient_name": "Eleanor Martinez",
+      "prescriber_name": "Dr. Sarah Chen",
+      "prescriber_npi": null,
+      "face_to_face_date": "2026-11-18",
+      "order_date": "2026-11-18",
+      "signed": true
+    }
+  ]
+}

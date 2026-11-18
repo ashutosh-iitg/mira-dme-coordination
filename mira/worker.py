@@ -5,6 +5,9 @@ from temporalio.worker import Worker
 
 from mira.activities import CallActivities
 from mira.case_activities import CaseActivities
+from mira.coordinator.activities import CoordinatorActivities
+from mira.coordinator.communication import CommunicationActivities
+from mira.coordinator.workflow import CaseCoordinatorWorkflow
 from mira.config import CASE_TASK_QUEUE, PHONE_LINES, VOICE_CALL_TASK_QUEUE, scenario_path
 from mira.events import EventLog
 from mira.mock_fax import MockFaxInbox
@@ -18,7 +21,7 @@ from mira.workflows.sourcing import SupplierSourcingWorkflow
 
 logger = logging.getLogger(__name__)
 
-WORKFLOWS = [CaseWorkflow, SupplierSourcingWorkflow, PcpOrderWorkflow, FulfillmentWorkflow, HumanReviewWorkflow]
+WORKFLOWS = [CaseWorkflow, SupplierSourcingWorkflow, PcpOrderWorkflow, FulfillmentWorkflow, HumanReviewWorkflow, CaseCoordinatorWorkflow]
 
 
 def build_activities(events: EventLog) -> tuple[CallActivities, CaseActivities]:
@@ -44,7 +47,13 @@ async def main() -> None:
     client = await connect()
     calls, case = build_activities(EventLog())
 
-    case_worker = Worker(client, task_queue=CASE_TASK_QUEUE, workflows=WORKFLOWS, activities=case_activity_methods(case))
+    coordinator = CoordinatorActivities()
+    communication = CommunicationActivities(coordinator.store)
+    case_worker = Worker(client, task_queue=CASE_TASK_QUEUE, workflows=WORKFLOWS, activities=[
+        *case_activity_methods(case), coordinator.sync, coordinator.plan, coordinator.apply, coordinator.failure,
+        communication.prepare_communication, communication.record_communication,
+        communication.communication_failed,
+    ])
     voice_worker = Worker(
         client,
         task_queue=VOICE_CALL_TASK_QUEUE,

@@ -116,4 +116,20 @@ place_call:   MockVoiceAgent → transcript → LLM extraction → CallOutcome
 - [x] Current architecture diagram and detailed state/scaling decisions in `ARCHITECTURE.md`
 - [x] Ordered roadmap: coordinator → safeguards/online checks → observability/evaluation → models → voice → additional tools/channels
 - [x] Prefer safety over liveness and consistency over availability; distinguish current checks from production requirements
-- [ ] Next execution step: integrated scenarios on Temporal Cloud with compressed timers and visible Cloud histories
+- [ ] Next execution step: verify real-case scenarios on Temporal Cloud with compressed timers and visible Cloud histories
+
+## Mid-case multi-party coordination
+
+- [x] Pause sourcing or fulfillment at supplier information requirements; resume the same child after clearance
+- [x] One case-owned coordinator and JSON evidence graph shared across phases
+- [x] Patient → PCP → patient → supplier loop, including rejection/correction and repeated requirements
+- [x] Exact-reference sharing permission and supplier acceptance; opaque document references with metadata checks
+- [x] Clinical/unknown scope, conflicting identity, revoked permission and bounded failures require review
+- [x] Mock voice fixture, sequence diagram, state ownership and limits in `MIDRUN_COORDINATION.md`
+- [x] 87 tests pass on local Temporal with scripted model/extraction; no new live-model or Cloud run for this increment
+
+## Submission cleanup
+
+- [x] Retire the prerequisite simulation runner and its six wrapper tests now that the real case owns coordination
+- [x] Keep live evaluation scenarios/results and ignored timestamped artifacts as historical evidence
+- [x] Keep real-case integration tests and mock scenarios as the supported end-to-end path (92 collected tests)

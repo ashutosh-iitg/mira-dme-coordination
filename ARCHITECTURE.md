@@ -6,47 +6,39 @@ This document describes the implementation at 18 November 2026 and the product d
 
 ```mermaid
 flowchart TB
-    CLI[Original Cloud demo CLI] --> CASE
-    STANDALONE[Coordinator CLI: new tasks and replies] --> COORD
-
-    ROOT[SimulatedDmeCaseWorkflow: local test server] --> COORD
-    subgraph AGENT[Reusable coordinator components]
-        COORD[CaseCoordinatorWorkflow]
-        COORD --> PLAN[Planning activity: Deep Agents on LangGraph]
-        PLAN --> PROPOSAL[Typed action proposal]
-        PROPOSAL --> APPLY[Apply activity: evidence, consent and version checks]
-        APPLY <--> DOC[(JSON business document)]
-        APPLY --> NOTICE[Committed-action signal to simulation parent]
-    end
-
-    NOTICE --> ROOT
-    ROOT --> MOCK[Mock voice call or booking]
-    MOCK --> TIMER[Durable delayed-callback timer]
-    TIMER --> INBOX[Scripted voice callback and typed evidence]
-    INBOX -->|Temporal signal| COORD
-    COORD -->|Required task completed| ROOT
-    ROOT -->|Unblock fulfillment| CASE[Existing CaseWorkflow]
-    ROOT -->|Clinical or unresolved prerequisite| HUMAN[HumanReviewWorkflow]
-
+    CLI[Case CLI] --> CASE[CaseWorkflow]
+    STANDALONE[Standalone coordinator CLI] --> COORD
     CASE --> SOURCING[SupplierSourcingWorkflow]
     CASE --> ORDER[PcpOrderWorkflow]
     SOURCING --> MATCH[Validated order and qualified supplier]
     ORDER --> MATCH
-    MATCH --> FULFILL[FulfillmentWorkflow: handoff, follow-up, fallback]
-    FULFILL --> UPDATE[Patient delivery update]
-    SOURCING --> CALLS[voice-calls queue]
+    MATCH --> FULFILL[FulfillmentWorkflow]
+    FULFILL --> UPDATE[Patient updates and questions]
+    SOURCING -->|Requirement pauses this step| CASE
+    ORDER -->|Administrative requirement pauses this step| CASE
+    UPDATE -->|Question needs clarification| CASE
+    FULFILL -->|Requirement pauses this step| CASE
+    CASE -->|One coordinator child per case| COORD[CaseCoordinatorWorkflow]
+    COORD --> PLAN[Deep Agents planning activity]
+    PLAN --> APPLY[Typed proposal and evidence checks]
+    APPLY <--> DOC[(JSON evidence graph and lifecycle)]
+    APPLY --> COMM[Prepare communication and record observation]
+    COMM --> CALLS[voice-calls queue]
+    SOURCING --> CALLS
     ORDER --> CALLS
     FULFILL --> CALLS
     UPDATE --> CALLS
     CALLS --> VOICE[MockVoiceAgent]
-    VOICE --> EXTRACT[Live structured LLM extraction]
+    VOICE --> EXTRACT[Structured call extraction]
+    EXTRACT -->|Typed observation| COORD
+    COORD -->|Exact requester acceptance resumes waiting step| CASE
     ORDER <--> FAX[Mock fax inbox and signed orders]
-    CASE -->|Blocking exception| HUMAN
+    CASE -->|Unresolved or clinical requirement| HUMAN[HumanReviewWorkflow or patient callback]
 ```
 
-The diagram combines three entry points, not one deployment claim. The original case demo and standalone coordinator can run against the configured Temporal Cloud profile. The integrated five-case runner starts a separate local time-skipping server per scenario. Those temporary executions are not in Cloud; their exported histories are the evidence. Running the integrated scenarios on Cloud with compressed delays is the next execution step, not part of this documentation/commit task.
+The normal demo and standalone coordinator use the configured Temporal connection. Automated tests run the same workflows on local time-skipping servers, with scripted model responses. No additional simulation parent is required. The former prerequisite simulation runner was removed after coordination moved into the actual case; its live results remain historical evidence in `SIMULATION_RESULTS.md`.
 
-In the simulation, the coordinator's follow-up is a prerequisite for the existing case workflow. It does not yet continuously take over every later supplier or PCP exception from that workflow. The standalone coordinator supports additional task signals after earlier tasks settle; general production escalation transfer and resumption remain future integration work.
+The DME case owns one coordinator child for supplier and administrative PCP requirements and patient questions. A shared JSON evidence graph records source observations, applicable patient permission, forwarding and explicit requester acceptance before the waiting step resumes. See [MIDRUN_COORDINATION.md](MIDRUN_COORDINATION.md) for the supplier sequence. Clinical/unclear requirements remain human work.
 
 ## State and authority today
 
@@ -101,7 +93,7 @@ flowchart LR
     U --> E
 ```
 
-This is the target contract for real external tools. Today, mocked receipts can be committed inside the JSON transition, and the simulation dispatches the mock call afterward. That ordering is acceptable for the fixture but does not establish exactly-once real-world effects.
+This is the target contract for real external tools. Today, mocked receipts can be committed inside the JSON transition, and communication activities dispatch the mock call afterward. That ordering is acceptable for the fixture but does not establish exactly-once real-world effects.
 
 Use one canonical case version, an append-only evidence/action ledger and a single logical writer. Produce plans outside the lock; use compare-and-set at commit. Bind approvals to the exact relevant terms and invalidate them when those terms change. Preserve source identity, timestamps and superseded evidence rather than overwriting contradictory claims. Event and action IDs must survive provider and workflow retries.
 
@@ -132,6 +124,6 @@ The product's eventual success measure is the patient receiving the appropriate 
 
 ## What the evidence supports
 
-The direct live evaluation passed 4/5 scenarios and exposed clinical misrouting. The integrated local Temporal run passed 5/5; it exercised mock calls, signals, timers, downstream DME workflows and human review, and exported 27 histories. A no-proposal turn recovered through an activity retry. These are small scripted runs, not a consistency guarantee. The automated suite also tests a misrouted clinical request to verify that the simulation does not unblock fulfillment.
+The direct live evaluation passed 4/5 scenarios and exposed clinical misrouting. A historical prerequisite simulation passed 5/5 and exported 27 histories. Those small scripted live runs do not establish reliability for the current case-owned coordinator. The retained tests exercise the real case with mock calls and scripted model/extraction responses, including delayed replies, task-specific reviews, contact budgets, supplier rejection/correction, PCP requests and patient questions. The current suite contains 92 tests.
 
-See [WRITEUP.md](WRITEUP.md), [COORDINATOR_EVAL_RESULTS.md](COORDINATOR_EVAL_RESULTS.md), [SIMULATION_RESULTS.md](SIMULATION_RESULTS.md), and [SIMULATION.md](SIMULATION.md) for scope, results and reproduction.
+See [WRITEUP.md](WRITEUP.md), [COORDINATOR_EVAL_RESULTS.md](COORDINATOR_EVAL_RESULTS.md), [SIMULATION_RESULTS.md](SIMULATION_RESULTS.md), and [MIDRUN_COORDINATION.md](MIDRUN_COORDINATION.md) for scope and evidence.

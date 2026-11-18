@@ -7,9 +7,12 @@ from temporalio.exceptions import ActivityError
 
 with workflow.unsafe.imports_passed_through():
     from mira.coordinator.activities import CoordinatorActivities
+    from mira.coordinator.communication import CommunicationActivities
     from mira.coordinator.models import (
         CoordinatorInput, FollowupTask, IncomingEvent, Snapshot, SyncRequest, TaskStatus, TurnRequest,
+        CommunicationRequest, CommunicationResult,
     )
+    from mira.workflows.common import place_call
 
 TASK_QUEUE = "dme-coordinator"
 IO_TIMEOUT = timedelta(seconds=30)
@@ -60,6 +63,8 @@ class CaseCoordinatorWorkflow:
             )
             if self._snapshot.closed:
                 return self._snapshot
+            if inp.observer_workflow_id and any(t.status is TaskStatus.REVIEW for t in self._snapshot.tasks):
+                await workflow.get_external_workflow_handle(inp.observer_workflow_id).signal("coordinator_action", self._snapshot)
             if inp.stop_when_settled and self._snapshot.tasks and all(
                 t.status in {TaskStatus.COMPLETED, TaskStatus.CANCELLED, TaskStatus.REVIEW}
                 for t in self._snapshot.tasks
@@ -84,11 +89,31 @@ class CaseCoordinatorWorkflow:
                         CoordinatorActivities.apply, decision,
                         start_to_close_timeout=IO_TIMEOUT, retry_policy=RETRY,
                     )
+                    if inp.communication_enabled and not self._events and not self._closing:
+                        communication = CommunicationRequest(case_id=inp.case_id, action_id=request.turn_id)
+                        call = await workflow.execute_activity_method(
+                            CommunicationActivities.prepare_communication, communication,
+                            start_to_close_timeout=IO_TIMEOUT, retry_policy=RETRY,
+                        )
+                        if call:
+                            outcome = await place_call(call)
+                            self._snapshot = await workflow.execute_activity_method(
+                                CommunicationActivities.record_communication,
+                                CommunicationResult(request=communication, outcome=outcome, now=workflow.now()),
+                                start_to_close_timeout=IO_TIMEOUT, retry_policy=RETRY,
+                            )
                 except ActivityError:
-                    self._snapshot = await workflow.execute_activity_method(
-                        CoordinatorActivities.failure, request,
-                        start_to_close_timeout=IO_TIMEOUT, retry_policy=RETRY,
-                    )
+                    if inp.communication_enabled and self._snapshot.last_action and self._snapshot.last_action.get("action_id") == request.turn_id:
+                        self._snapshot = await workflow.execute_activity_method(
+                            CommunicationActivities.communication_failed,
+                            CommunicationRequest(case_id=inp.case_id, action_id=request.turn_id),
+                            start_to_close_timeout=IO_TIMEOUT, retry_policy=RETRY,
+                        )
+                    else:
+                        self._snapshot = await workflow.execute_activity_method(
+                            CoordinatorActivities.failure, request,
+                            start_to_close_timeout=IO_TIMEOUT, retry_policy=RETRY,
+                        )
                 if inp.observer_workflow_id:
                     await workflow.get_external_workflow_handle(inp.observer_workflow_id).signal(
                         "coordinator_action", self._snapshot,
