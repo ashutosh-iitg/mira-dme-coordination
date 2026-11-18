@@ -63,7 +63,7 @@ Terminal 1 — the worker (both task queues):
 uv run python -m mira.worker
 ```
 
-Terminal 2 — start Eleanor's case and wait for the summary (~1–2 minutes):
+Terminal 2 — start Eleanor's case and wait for the summary (runtime depends on model latency, retries and quota):
 
 ```bash
 uv run python -m mira.start_case
@@ -77,7 +77,7 @@ Lincoln Park doesn't answer then says yes on the callback; the PCP office loses 
 sends an order coded K0003 (caught, fix-up call, corrected); Lincoln Park goes silent after handoff, so the
 case falls back to Prairie State, which explicitly confirms a scheduled delivery. Eleanor's cost and folding
 questions go to the case coordinator, which asks the supplier, relays the answer and asks her to confirm it; the case
-keeps going meanwhile. If she does not explicitly accept the answer, the question becomes a callback in the human inbox.
+keeps going meanwhile. Before finishing, it waits for questions to settle or creates callbacks. If she does not explicitly accept the answer, the question becomes a callback in the human inbox.
 
 | `SCENARIO` | What it shows |
 |---|---|
@@ -126,8 +126,9 @@ running on wall-clock time while the worker is down, so a long outage can legiti
 
 **Model rate limits.** A free-tier model can run out of daily quota mid-case. Calls that still fail after
 retries become a *technical failure* review (e.g. `…:technical-pcp-order`); the case waits safely. Once the
-quota resets, `decide <escalation-id> retry` resumes that step. A full default run makes roughly 30–40 model
-requests.
+quota resets, `decide <escalation-id> retry` resumes that step. Coordination adds model turns, so budget for dozens of requests and allow for retries; the earlier 30–40-request estimate is not a quota guarantee for the current default scenario.
+
+**Verification status:** 99 credential-free tests pass. Saved live evidence confirms the PCP loop and a default run with safe patient-callback fallback. The latest patient-acceptance prompt has not been rerun live after daily quota exhaustion. The written-order filter also has a known compound-request limitation. See [the current review](ARCHITECTURE.md#current-review-and-verification).
 
 ## Tests
 

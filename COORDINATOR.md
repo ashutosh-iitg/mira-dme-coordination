@@ -127,7 +127,7 @@ uv run python -m mira.coordinator close eleanor-followups
 
 `human_cancel` cancels one task. Ordinary inbound replies do not automatically clear a task awaiting human review.
 
-`start` and `add` accept `--escalation <id>` to attach the original escalation as provenance. That manual bridge does not close its existing human review or mark a case clinically ready. Separately, DME sourcing and fulfillment now automatically signal supplier information requirements to one case-owned coordinator child. Its new `supplier_information` task supports patient/PCP/supplier loops and an evidence graph, with exact supplier acceptance required before the requesting workflow resumes. See [MIDRUN_COORDINATION.md](MIDRUN_COORDINATION.md); the voice agent remains mocked.
+`start` and `add` accept `--escalation <id>` to attach the original escalation as provenance. That manual bridge does not close its existing human review or mark a case clinically ready. Separately, DME sourcing, PCP order chasing and fulfillment signal administrative requirements to one case-owned coordinator child. Patient questions use the same `information_requirement` task. Its requester may be supplier, PCP or patient; only that requester can accept the current forwarded reference. Patient permission is required when her information goes to a third party. Blocking steps resume after clearance; unresolved patient questions become callbacks before case completion. See [MIDRUN_COORDINATION.md](MIDRUN_COORDINATION.md); the voice agent remains mocked.
 
 ## Verification and scope
 
@@ -153,3 +153,9 @@ Tests cover the real Deep Agents graph using a fake tool-calling model, includin
 Live checks on 18 November: OpenRouter returned `429 free-models-per-day`; Groq's `qwen/qwen3.8-27b` was available but repeatedly produced malformed tool calls rejected by Groq. Switching to Groq's `openai/gpt-oss-120b` succeeded on the same generic appointment-availability prompt: the actual Deep Agents loop returned a schema-valid contact action with the correct task ID, patient recipient, reason and message. This is a smoke test, not a statistical model evaluation. Tests never need model credentials.
 
 There are now three task types, all with mocked communication/booking. Supplier information tasks additionally require explicit administrative scope; clinical or unknown source flags trigger review before contact. Model extraction can still misclassify language, so this is not a complete medical safety policy. Real clinical use requires stronger review and integration controls. No voice-provider work, DB server, UI, portal access or custom JSON LangGraph checkpoint format was added.
+
+## Current case integration status
+
+The current suite passes 99 tests, including task-specific reviews, failed-turn handling, contact/action budgets and all three requester roles. Ordinary replies from the contacted party reset only unanswered contacts, not the total action budget; human resume resets both. A rejected proposal reviews its named ready task, while failed or unattributable turns conservatively review all ready tasks.
+
+Saved live evidence confirms the PCP report loop and scheduling. The default case also scheduled delivery with a patient callback after acceptance extraction failed; the latest prompt change remains unverified live. The written-order exception needs narrowing to preserve compound requirements. [ARCHITECTURE.md](ARCHITECTURE.md#current-review-and-verification) records the current review and remaining findings. No model calls were made during this review.

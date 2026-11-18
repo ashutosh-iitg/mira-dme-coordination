@@ -30,7 +30,7 @@ flowchart TB
     UPDATE --> CALLS
     CALLS --> VOICE[MockVoiceAgent]
     VOICE --> EXTRACT[Structured call extraction]
-    EXTRACT -->|Typed observation| COORD
+    EXTRACT -->|Coordination-call observation| COORD
     COORD -->|Exact requester acceptance resumes waiting step| CASE
     ORDER <--> FAX[Mock fax inbox and signed orders]
     CASE -->|Unresolved or clinical requirement| HUMAN[HumanReviewWorkflow or patient callback]
@@ -47,7 +47,7 @@ The DME case owns one coordinator child for supplier and administrative PCP requ
 | Case execution, waits and retries | Temporal | Durable workflow history, timers, signals and child workflows |
 | Follow-up tasks, evidence and receipts | JSON case document | Per-case file locks, atomic replacement, versions and stable event/turn IDs on a shared local filesystem |
 | Next administrative action | Coordinator model | Bounded proposal, reconstituted from the document each turn; intermediate graph scratch state is not persisted |
-| Permission to change business state | Application checks | Exact consent/evidence and version checks; clinical intent routing is not yet comprehensively encoded in code |
+| Permission to change business state | Application checks | Exact consent/evidence and version checks; clinical or unknown source scope blocks requirement automation, but extraction can misclassify |
 | External communication and booking | Mock providers | Real provider delivery guarantees, identity checks and reconciliation are absent |
 | Human review | Review workflow and callback store | Explicit review lifecycle; the older callback JSON store is not a multi-writer transactional system |
 | Traces | JSONL, readable timelines and Temporal histories | Independent case traces with actual and simulated timestamps; prototype artifacts are not a production telemetry platform |
@@ -66,7 +66,7 @@ The desired behavior is to make progress only when the relevant prerequisites ar
 
 Unknown or conflicting evidence must produce a visible blocked/review state and an owned follow-up. The system should explain what it is waiting for, schedule bounded reminders and provide an authorized human route. It must not silently close an unresolved obligation, create a fictitious success, or repeatedly contact the patient merely to keep a workflow moving.
 
-The clinical-routing failure in the first live evaluation shows why this policy must extend beyond prompts. A model can produce schema-valid output while choosing the wrong process. Add a structured clinical-review requirement, actor authority and task-specific transition rules, then test them independently of the planner. Such a flag must come from an authorized source or a conservative review process; the agent must not clear its own safety restriction.
+The clinical-routing failure in the first live evaluation shows why this policy must extend beyond prompts. Current requirement tasks start in review unless their extracted source scope is explicitly administrative. Code checks requester authority, evidence and transitions; the planner cannot clear the source restriction. Extraction can still misclassify clinical language, and the written-order filter has the compound-request gap documented below. These checks are not a complete clinical safety policy.
 
 ## Reliability policy: consistency over availability
 
@@ -122,8 +122,36 @@ These are advancement gates, not independent promises to start new integrations 
 
 The product's eventual success measure is the patient receiving the appropriate equipment with understood next steps and costs. The current milestone is scheduling. Expand the outcome model to delivery receipt, setup and unresolved patient issues as the underlying tools become trustworthy, while maintaining an advocate/clinician exception inbox with clear ownership and evidence.
 
-## What the evidence supports
+## Current review and verification
 
-The direct live evaluation passed 4/5 scenarios and exposed clinical misrouting. A historical prerequisite simulation passed 5/5 and exported 27 histories. Those small scripted live runs do not establish reliability for the current case-owned coordinator. The retained tests exercise the real case with mock calls and scripted model/extraction responses, including delayed replies, task-specific reviews, contact budgets, supplier rejection/correction, PCP requests and patient questions. The current suite contains 92 tests.
+Reviewed implementation commit: `79b2023`. On 18 November 2026, `.venv/bin/python -m pytest -q` passed **99 tests** in 5.23 seconds. These run local Temporal workflows and the real Deep Agents graph with scripted model responses; they do not establish live-model quality. No LLM requests or new Cloud runs were made during this documentation review because the daily model quota was exhausted. Pytest reports a fixture-loop-scope deprecation warning, without test failures.
 
-See [WRITEUP.md](WRITEUP.md), [COORDINATOR_EVAL_RESULTS.md](COORDINATOR_EVAL_RESULTS.md), [SIMULATION_RESULTS.md](SIMULATION_RESULTS.md), and [MIDRUN_COORDINATION.md](MIDRUN_COORDINATION.md) for scope and evidence.
+| Capability | Current evidence |
+|---|---|
+| Supplier → patient → PCP → patient → supplier, including rejection/correction | `tests/test_supplier_coordination.py`: sourcing, fulfillment and one shared coordinator across both |
+| Administrative PCP request and resumed order chase | `tests/test_case_requirements.py`, plus saved live run described below |
+| Patient question answered or handed to a callback before case completion | `tests/test_case_requirements.py`; live default run exercised the safe callback path |
+| Rejected action targets the correct task; failed/unattributable turns review all ready tasks | `tests/test_coordinator_budgets.py` |
+| Unrelated replies preserve unanswered-contact counts; answered loops remain bounded | `tests/test_coordinator_budgets.py`; 4 unanswered contacts and 16 actions per task |
+| Clinical/unknown source scope, document metadata, permission and exact acceptance gates | Real-case requirement tests and coordinator transition tests |
+| Separate prerequisite simulation removed | Current entry points are the normal worker/case and optional standalone coordinator CLI |
+
+### Saved live evidence
+
+These observations are from existing runtime documents, event logs and recorded run notes, not new executions. All timestamps below are UTC. The runtime artifacts remain ignored by Git; the summary records the evidence available during review.
+
+- **PCP case `case-eleanor-martinez-20261118-094353`:** started 09:43:54; requester acceptance of `pt-eval-1027` recorded 09:46:13; K0001 order validated 09:46:17; `delivery_scheduled` recorded 09:46:40. Coordinator document `runtime/coordinator/dme-c05faeddf01ade090953b2b9.json` is closed with its PCP requirement completed. The recorded run used Cloud and live Groq with mocked external parties.
+- **Default case `case-eleanor-martinez-20261118-094716`:** a routine written-order request became an extra supplier task; automation did not clear it and a person closed the case. This motivated the current policy filter and its regression tests.
+- **Default case `case-eleanor-martinez-20261118-095320`:** order validated and delivery scheduled at 09:57:06, while the patient requirement remained unaccepted. The completion guard rejected the proposal, and the case created a callback. Coordinator document `runtime/coordinator/dme-d9f9d2a32b2942af3cb682bc.json` retains the review reason. The later prompt clarification about requester acceptance has not been verified live.
+
+Earlier direct evaluation passed 4/5 and exposed clinical misrouting. The retired prerequisite simulation passed 5/5 and exported 27 histories. Its results are preserved in [SIMULATION_RESULTS.md](SIMULATION_RESULTS.md); they are historical and do not validate the new case-owned paths.
+
+### Remaining review findings
+
+1. **Written-order filter is broader than its intended exception.** `requirement_to_coordinate` suppresses any description/type containing “signed order,” “written order” or “SWO.” A model-free check confirmed that both “send the signed order and a new mobility assessment” and “correct the signed order because it is for the wrong patient” return no coordination requirement, even with a clinical flag. This can discard the extra obligation from the coordination path. Restrict suppression to a routine request for the order alone, preserve compound/conflicting requests, and add regression cases. Existing qualification/scheduling checks do not substitute for tracking the discarded obligation.
+2. **Patient acceptance prompt needs a live rerun.** Scripted tests establish the success and callback paths, but not whether the changed extraction prompt reliably captures natural confirmation. Keep the explicit-acceptance gate; do not weaken it to improve a demo pass rate.
+3. **Production reliability remains deferred.** Document parsing/authentication, real transport identity, durable external dispatch/reconciliation, late-revocation rollback and distributed ownership are absent. Completed tasks retain late evidence without automatically reopening; plan a case-wide invalidation policy before expanding autonomy.
+
+The prototype demonstrates the assignment's coordination behavior, including recovery and human handoff. It should be presented with the two concrete model/policy gaps above, not as fully reliable unattended care coordination. No implementation changes were made in this review.
+
+See [WRITEUP.md](WRITEUP.md), [COORDINATOR_EVAL_RESULTS.md](COORDINATOR_EVAL_RESULTS.md), and [MIDRUN_COORDINATION.md](MIDRUN_COORDINATION.md) for the submission narrative, earlier model evaluation and loop details.

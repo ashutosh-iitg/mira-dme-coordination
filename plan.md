@@ -102,7 +102,7 @@ place_call:   MockVoiceAgent → transcript → LLM extraction → CallOutcome
 - [x] Regression tests include the actual Deep Agents graph under a fake model inside Temporal
 - [x] Live coordinator tool-call smoke test with Groq `openai/gpt-oss-120b`; provider selected via `MODEL_PROVIDER`, with `GROQ_MODEL` and optional `COORDINATOR_MODEL`
 
-## End-to-end simulation increment
+## Historical end-to-end simulation increment (runner subsequently retired)
 
 - [x] Parent Temporal simulation connects the coordinator prerequisite to the existing DME case workflows
 - [x] Mock voice calls, delayed callback signals, real model decisions/extraction, and guarded human review
@@ -116,7 +116,8 @@ place_call:   MockVoiceAgent → transcript → LLM extraction → CallOutcome
 - [x] Current architecture diagram and detailed state/scaling decisions in `ARCHITECTURE.md`
 - [x] Ordered roadmap: coordinator → safeguards/online checks → observability/evaluation → models → voice → additional tools/channels
 - [x] Prefer safety over liveness and consistency over availability; distinguish current checks from production requirements
-- [ ] Next execution step: verify real-case scenarios on Temporal Cloud with compressed timers and visible Cloud histories
+- [x] Live Cloud PCP loop completed through scheduling; default run demonstrated scheduling plus patient-callback fallback
+- [ ] Verify the latest patient-acceptance prompt live after quota recovery; repeat real-case scenarios
 
 ## Mid-case multi-party coordination
 
@@ -132,4 +133,15 @@ place_call:   MockVoiceAgent → transcript → LLM extraction → CallOutcome
 
 - [x] Retire the prerequisite simulation runner and its six wrapper tests now that the real case owns coordination
 - [x] Keep live evaluation scenarios/results and ignored timestamped artifacts as historical evidence
-- [x] Keep real-case integration tests and mock scenarios as the supported end-to-end path (92 collected tests)
+- [x] Keep real-case integration tests and mock scenarios as the supported end-to-end path (92 tests at cleanup, now 99)
+
+## Current status review — 18 November 2026
+
+- [x] Reviewed implementation commit `79b2023`; all 99 tests pass with scripted model/extraction responses
+- [x] Confirmed PCP administrative requests and patient questions use the same case-owned requirement coordinator
+- [x] Confirmed rejected actions review the targeted task and failed/unattributable turns review all ready tasks
+- [x] Confirmed contacted-party-only contact reset and separate 16-action budget
+- [x] Reconciled docs with saved live evidence and separated historical simulation results
+- [x] Updated submission writeup, architecture, run guide and coordination scope; no LLM calls in this review
+- [ ] Narrow the written-order exception: it currently suppresses compound/clinical requests that mention the order
+- [ ] Live-verify the patient-acceptance prompt after quota recovery; retain safe callback fallback meanwhile
