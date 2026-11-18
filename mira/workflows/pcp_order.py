@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import dataclass
+from datetime import datetime
 
 from temporalio import workflow
 
@@ -31,6 +32,10 @@ with workflow.unsafe.imports_passed_through():
     )
 
 
+MIN_WAIT_DAYS = 1.0
+MAX_WAIT_MULTIPLIER = 2
+
+
 @dataclass(frozen=True)
 class NudgeStep:
     order: WrittenOrder | None = None
@@ -47,6 +52,8 @@ class PcpOrderWorkflow:
         self._call_attempts: dict[CallPurpose, int] = {}
         self._fetch_attempts = 0
         self._nudges = 0
+        self._contact_name: str | None = None
+        self._next_wait_days: float | None = None
 
     @workflow.signal
     def order_received(self, order: WrittenOrder) -> None:
@@ -66,22 +73,24 @@ class PcpOrderWorkflow:
         request_outcome = await self._call_until_connected(inp, CallPurpose.PCP_ORDER_REQUEST, self._request_points(inp))
         if request_outcome is None:
             await self._fax_request(inp, "office unreachable by phone")
+            step = NudgeStep()
+        else:
+            step = await self._act_on_response(inp, request_outcome, "request")
+        if step.escalation_id:
+            return self._result(OrderOutcomeStatus.ESCALATED, None, problems_seen, step.escalation_id)
+        order = step.order
 
-        nudge_now = False
         while True:
-            order = None if nudge_now else await self._wait_for_order(inp)
-            nudge_now = False
-
             if order is None:
-                elapsed_days = (workflow.now() - started).total_seconds() / inp.seconds_per_day
-                if self._nudges >= inp.max_nudges or elapsed_days >= inp.sla_days:
-                    return await self._stalled(inp, problems_seen, elapsed_days)
+                order = await self._wait_for_order(inp)
+            if order is None:
+                if self._over_budget(inp, started):
+                    return await self._stalled(inp, problems_seen, self._elapsed_days(inp, started))
                 step = await self._nudge(inp, pending_problems)
                 if step.escalation_id:
                     return self._result(OrderOutcomeStatus.ESCALATED, None, problems_seen, step.escalation_id)
                 order = step.order
-                if order is None:
-                    continue
+                continue
 
             problems = validate_order(order, inp.equipment.hcpcs_code, inp.patient_name)
             if not problems:
@@ -93,14 +102,27 @@ class PcpOrderWorkflow:
             await log_event(inp.case_id, "order_rejected", problems="; ".join(problems))
             problems_seen.extend(problems)
             pending_problems = problems
-            nudge_now = True
+            if self._over_budget(inp, started):
+                return await self._stalled(inp, problems_seen, self._elapsed_days(inp, started))
+            step = await self._nudge(inp, problems)
+            if step.escalation_id:
+                return self._result(OrderOutcomeStatus.ESCALATED, None, problems_seen, step.escalation_id)
+            order = step.order
+
+    def _elapsed_days(self, inp: OrderInput, started: datetime) -> float:
+        return (workflow.now() - started).total_seconds() / inp.seconds_per_day
+
+    def _over_budget(self, inp: OrderInput, started: datetime) -> bool:
+        return self._nudges >= inp.max_nudges or self._elapsed_days(inp, started) >= inp.sla_days
 
     async def _wait_for_order(self, inp: OrderInput) -> WrittenOrder | None:
-        self._state = "waiting for signed order"
+        wait_days = self._next_wait_days or inp.nudge_interval_days
+        self._next_wait_days = None
+        self._state = f"waiting up to {wait_days:g} days for signed order"
         try:
             await workflow.wait_condition(
                 lambda: self._inbound_order is not None,
-                timeout=days_to_timedelta(inp.nudge_interval_days, inp.seconds_per_day),
+                timeout=days_to_timedelta(wait_days, inp.seconds_per_day),
             )
         except asyncio.TimeoutError:
             return None
@@ -111,17 +133,27 @@ class PcpOrderWorkflow:
         self._nudges += 1
         self._state = f"nudging office (#{self._nudges})"
         outcome = await self._call_until_connected(inp, CallPurpose.PCP_ORDER_NUDGE, self._nudge_points(inp, problems))
+        return await self._act_on_response(inp, outcome, f"nudge #{self._nudges}")
+
+    async def _act_on_response(self, inp: OrderInput, outcome: CallOutcome | None, source: str) -> NudgeStep:
+        """One handler for every office response, so the first call is acted on exactly like a nudge."""
         status = self._order_status(outcome)
-        await log_event(inp.case_id, "pcp_nudged", nudge=self._nudges, status=status)
+        pcp = outcome.pcp if outcome else None
+        if pcp and pcp.contact_name:
+            self._contact_name = pcp.contact_name
+        await log_event(inp.case_id, "pcp_response", source=source, status=status, contact=self._contact_name or "")
 
         if status is PcpOrderStatus.NOT_RECEIVED:
             await self._fax_request(inp, "office reports request never received")
         elif status is PcpOrderStatus.NEEDS_INFO:
-            notes = outcome.pcp.notes if outcome and outcome.pcp else ""
-            escalation_id = await escalate(inp.case_id, "pcp-needs-info", "PCP office needs information before signing", notes=notes)
+            escalation_id = await escalate(
+                inp.case_id, "pcp-needs-info", "PCP office needs information before signing", notes=pcp.notes if pcp else ""
+            )
             return NudgeStep(escalation_id=escalation_id)
         elif status is PcpOrderStatus.SIGNED_AND_SENT:
             return NudgeStep(order=await self._check_fax_inbox(inp))
+        elif status is PcpOrderStatus.IN_PROGRESS and pcp and pcp.expected_in_days:
+            self._next_wait_days = min(max(float(pcp.expected_in_days), MIN_WAIT_DAYS), inp.nudge_interval_days * MAX_WAIT_MULTIPLIER)
         return NudgeStep()
 
     async def _call_until_connected(self, inp: OrderInput, purpose: CallPurpose, points: list[str]) -> CallOutcome | None:
@@ -192,13 +224,16 @@ class PcpOrderWorkflow:
     def _request_points(inp: OrderInput) -> list[str]:
         return [
             f"Patient {inp.patient_name} was seen by {inp.pcp.name}; verbal order for {inp.equipment.description} is in the chart",
-            f"Need a signed standard written order for HCPCS {inp.equipment.hcpcs_code}, quantity 1, with prescriber NPI",
+            f"Need a signed standard written order for HCPCS {inp.equipment.hcpcs_code}, quantity 1, with prescriber name/NPI",
+            "Confirm the visit note documents her mobility limitation, why a cane or walker is not enough, "
+            "and that she can use a manual wheelchair at home (self-propelled or with a caregiver)",
             "Ask who to follow up with and when it will be signed",
         ]
 
-    @staticmethod
-    def _nudge_points(inp: OrderInput, problems: list[str]) -> list[str]:
+    def _nudge_points(self, inp: OrderInput, problems: list[str]) -> list[str]:
         points = [f"Following up on the written order for {inp.patient_name} ({inp.equipment.hcpcs_code})"]
+        if self._contact_name:
+            points.append(f"Ask for {self._contact_name}, who handled this before")
         if problems:
             points.append("The order received has problems that would get the claim denied: " + "; ".join(problems))
             points.append("Ask them to correct and re-send it")

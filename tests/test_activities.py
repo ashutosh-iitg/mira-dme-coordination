@@ -11,6 +11,7 @@ from mira.config import ConfigError
 from mira.events import EventLog
 from mira.models import CallDisposition, CallPurpose
 from mira.voice.agent import MockVoiceAgent, Scenario
+from tests.fakes import fake_complete
 
 
 async def _missing_key(*_: object) -> None:
@@ -39,3 +40,17 @@ async def test_missing_llm_config_is_non_retryable(scenario: Scenario, tmp_path:
         await ActivityEnvironment().run(activities.place_call, request)
 
     assert exc_info.value.non_retryable
+
+
+async def test_delivery_followup_retains_structured_scheduling_evidence(scenario: Scenario, tmp_path: Path) -> None:
+    log_path = tmp_path / "events.jsonl"
+    activities = CallActivities(MockVoiceAgent(scenario), EventLog(log_path), complete=fake_complete)
+    request = make_request("(773) 555-0211", CallPurpose.SUPPLIER_FOLLOWUP)
+
+    outcome = await ActivityEnvironment().run(activities.place_call, request)
+
+    assert outcome.followup is not None
+    event = json.loads(log_path.read_text().strip())
+    assert event["result"] == outcome.followup.model_dump(mode="json")
+    assert event["result"]["delivery_status"] == "scheduled"
+    assert event["result"]["order_received"] is True

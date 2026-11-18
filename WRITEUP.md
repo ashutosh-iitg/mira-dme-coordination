@@ -42,20 +42,33 @@ Each scenario failure in the brief is scripted in `data/scenarios/default.json`,
 "we're enrolled but stopped taking new Medicare patients" → not accepting), with a confidence score. This is
 the part that's genuinely hard to do with rules.
 
-**Where I kept AI out, on purpose:** whether a supplier qualifies, whether an order is billable (HCPCS match,
-standard-written-order elements, NPI, signature, visit recency), when to retry, fall back or escalate, and
-whether a patient call needs a human. These are in `policy.py` and the workflows as plain, tested code. A wrong
-call here costs the patient the full bill, so decisions must be auditable and deterministic. Low-confidence
-extractions are never trusted; they just mean "call again". One live run showed why: the model read a range ETA
-as unknown, and the ranking rule (known ETA beats unknown) handled it safely. I then tightened the prompt.
+**Where I kept AI out, on purpose:** whether a supplier qualifies (including an affirmative "we deliver to her
+area"), whether a delivery is actually scheduled (explicit booking, not typical timing), whether the written order
+is consistent with the case (HCPCS match plus standard-written-order elements), when to retry, fall back or
+escalate, and whether a patient call needs a human. These are in `policy.py` and the workflows as plain, tested
+code. A wrong call here costs the patient the full bill, so decisions must be auditable and deterministic.
+Unknown or low-confidence facts never advance a case: for suppliers and the PCP they mean "call again"; for the
+patient they create a human callback. One live run showed why: the model read a range ETA as unknown, and the
+ranking rule (known ETA beats unknown) handled it safely. I then tightened the prompt.
+
+The order checks are consistency checks, not a coverage decision. Medical necessity documentation is requested
+from the PCP and left with the PCP and supplier, and the ~20% patient share is quoted only as conditional on the
+supplier accepting assignment.
+
+**Failures are cases too.** A business problem (no supplier, stalled order) and a technical one (LLM provider
+down, bad config) both become a visible human review with retry/close. Technical failures are never turned into
+a fake "no answer".
 
 ## Cut list
 
 - **Real telephony and voice AI.** Mocked behind `VoiceAgent`. Talking points are already passed per call, ready
   for a real agent's script.
 - **Inbound calls.** Suppliers or offices calling back are modeled only as signals.
-- **Eligibility, enrollment verification, claim submission, delivery confirmation.** The case ends at "delivery
-  scheduled". The directory is treated as the enrollment source, as the brief says.
+- **Eligibility, enrollment verification, medical-necessity review, claim submission, delivery confirmation.**
+  The case ends at a supplier-confirmed scheduled delivery. The directory is treated as the enrollment source, as
+  the brief says.
+- **Extraction quality measurement.** Workflow tests use a fake LLM, so they prove orchestration, not that the
+  model reads calls correctly. A field-level eval set is the first thing I'd add.
 - **Real fax and portal.** Mocked. The signed order arrives through a scripted inbox or a signal.
 - **DB, auth, UI.** JSON files and the Temporal UI.
 - **Patient address and phone** aren't in the intake. They're placeholders, flagged in `case.json`.

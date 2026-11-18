@@ -3,6 +3,7 @@ from temporalio import workflow
 with workflow.unsafe.imports_passed_through():
     from mira.case_activities import CaseActivities
     from mira.models import (
+        CallDisposition,
         CallPurpose,
         CallRequest,
         FulfillmentAttempt,
@@ -58,7 +59,7 @@ class FulfillmentWorkflow:
         escalation_id = await escalate(
             inp.case_id,
             "no-delivery",
-            "Every lined-up supplier went silent or declined after receiving the order",
+            "No lined-up supplier confirmed a scheduled delivery after receiving the order",
             tried=", ".join(f"{a.supplier_name} ({a.result})" for a in self._attempts),
         )
         return FulfillmentResult(scheduled_with=None, delivery_eta_days=None, attempts=list(self._attempts), escalation_id=escalation_id)
@@ -76,6 +77,7 @@ class FulfillmentWorkflow:
         )
         await sleep_days(inp.followup_after_days, inp.seconds_per_day)
 
+        connected_once = False
         for call_number in range(1, inp.max_followup_calls + 1):
             outcome = await place_call(
                 CallRequest(
@@ -91,9 +93,10 @@ class FulfillmentWorkflow:
                     ],
                 )
             )
+            connected_once = connected_once or outcome.disposition is CallDisposition.CONNECTED
             decision = assess_followup(outcome)
             if decision in DECISION_TO_RESULT:
-                eta = outcome.supplier.delivery_eta_days if outcome.supplier else None
+                eta = outcome.followup.delivery_eta_days if outcome.followup else None
                 await log_event(inp.case_id, "supplier_followup", supplier=supplier.supplier_name, result=decision, eta_days=eta)
                 return FulfillmentAttempt(
                     supplier_name=supplier.supplier_name,
@@ -105,7 +108,8 @@ class FulfillmentWorkflow:
             if call_number < inp.max_followup_calls:
                 await sleep_days(inp.followup_retry_days, inp.seconds_per_day)
 
-        await log_event(inp.case_id, "supplier_went_silent", supplier=supplier.supplier_name, calls=inp.max_followup_calls)
+        result = HandoffResult.UNCONFIRMED if connected_once else HandoffResult.SILENT
+        await log_event(inp.case_id, "supplier_not_confirmed", supplier=supplier.supplier_name, result=result, calls=inp.max_followup_calls)
         return FulfillmentAttempt(
-            supplier_name=supplier.supplier_name, phone=supplier.phone, result=HandoffResult.SILENT, followup_calls=inp.max_followup_calls
+            supplier_name=supplier.supplier_name, phone=supplier.phone, result=result, followup_calls=inp.max_followup_calls
         )

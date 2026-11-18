@@ -10,6 +10,7 @@ from mira.models import (
     CallOutcome,
     CallPurpose,
     CallRequest,
+    FollowupResult,
     Frozen,
     PatientUpdateResult,
     PcpOrderResult,
@@ -32,6 +33,11 @@ class SupplierExtraction(Frozen):
     confidence: float = Field(ge=0.0, le=1.0)
 
 
+class FollowupExtraction(Frozen):
+    result: FollowupResult
+    confidence: float = Field(ge=0.0, le=1.0)
+
+
 class PcpExtraction(Frozen):
     result: PcpOrderResult
     confidence: float = Field(ge=0.0, le=1.0)
@@ -45,7 +51,7 @@ class PatientExtraction(Frozen):
 @dataclass(frozen=True)
 class PurposeSpec:
     instructions: str
-    schema: type[SupplierExtraction | PcpExtraction | PatientExtraction]
+    schema: type[SupplierExtraction | FollowupExtraction | PcpExtraction | PatientExtraction]
     outcome_field: str
 
 
@@ -54,10 +60,24 @@ SUPPLIER_SPEC = PurposeSpec(
         "The agent called a DME supplier to ask whether they take new Original Medicare patients, "
         "have a standard manual wheelchair (HCPCS K0001) in stock, deliver to the patient's area, and how soon. "
         "committed_to_deliver is true only if the supplier explicitly agreed to take this patient. "
-        "delivery_eta_days is a whole number of days; if they give a range (e.g. 'two, three days'), use the upper bound."
+        "delivery_eta_days is a whole number of days; if they give a range (e.g. 'two, three days'), use the upper bound. "
+        "accepts_assignment is true only if they say they accept Medicare assignment (bill Medicare's approved amount)."
     ),
     schema=SupplierExtraction,
     outcome_field="supplier",
+)
+
+FOLLOWUP_SPEC = PurposeSpec(
+    instructions=(
+        "The agent called a DME supplier that was already sent the patient's signed order, to confirm delivery. "
+        "delivery_status: 'scheduled' ONLY if the supplier says delivery is actually booked or on the schedule "
+        "(a day, a truck, an appointment); 'tentative' if they only give typical timing or conditions "
+        "(e.g. 'usually four days after eligibility clears'); 'not_scheduled' if they acknowledge the case but have not "
+        "booked it; 'declined' if they will not supply it; 'unclear' otherwise. "
+        "order_received is whether they confirm having the signed order. delivery_eta_days may be null even when scheduled."
+    ),
+    schema=FollowupExtraction,
+    outcome_field="followup",
 )
 
 PCP_SPEC = PurposeSpec(
@@ -81,7 +101,7 @@ PATIENT_SPEC = PurposeSpec(
 
 PURPOSE_SPECS: dict[CallPurpose, PurposeSpec] = {
     CallPurpose.SUPPLIER_SCREEN: SUPPLIER_SPEC,
-    CallPurpose.SUPPLIER_FOLLOWUP: SUPPLIER_SPEC,
+    CallPurpose.SUPPLIER_FOLLOWUP: FOLLOWUP_SPEC,
     CallPurpose.PCP_ORDER_REQUEST: PCP_SPEC,
     CallPurpose.PCP_ORDER_NUDGE: PCP_SPEC,
     CallPurpose.PATIENT_UPDATE: PATIENT_SPEC,

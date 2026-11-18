@@ -13,7 +13,7 @@ with workflow.unsafe.imports_passed_through():
         SupplierStatus,
         SupplierVerdict,
     )
-    from mira.policy import ScreenDecision, assess_supplier_call, within_service_radius
+    from mira.policy import ScreenDecision, assess_supplier_call, order_candidates
     from mira.workflows.common import (
         CASE_ACTIVITY_TIMEOUT,
         DEFAULT_RETRY,
@@ -24,15 +24,12 @@ with workflow.unsafe.imports_passed_through():
         sleep_days,
     )
 
-UNKNOWN_ETA_RANK = 999
-
-
 def _screen_talking_points(inp: SourcingInput) -> list[str]:
     return [
         "Patient has Original Medicare Part B, no supplemental plan",
         f"Needs {inp.equipment.description} (HCPCS {inp.equipment.hcpcs_code})",
         f"Delivery ZIP {inp.patient_zip}",
-        "Ask: taking new Medicare patients? item in stock? deliver to that ZIP, how soon? will you take the case?",
+        "Ask: taking new Medicare patients? item in stock? deliver to that ZIP, how soon? accept Medicare assignment? will you take the case?",
     ]
 
 
@@ -56,7 +53,7 @@ class SupplierSourcingWorkflow:
             retry_policy=DEFAULT_RETRY,
         )
         distances = {r.supplier.phone: r.distance_miles for r in ranked}
-        pending = self._drop_out_of_range(ranked)
+        pending = [r.supplier for r in ranked]
         attempts: dict[str, int] = {}
         qualified: list[SupplierVerdict] = []
         round_number = 0
@@ -83,21 +80,6 @@ class SupplierSourcingWorkflow:
 
         return await self._finish(inp, qualified)
 
-    def _drop_out_of_range(self, ranked: list[RankedSupplier]) -> list[Supplier]:
-        in_range: list[Supplier] = []
-        for r in ranked:
-            if within_service_radius(r.distance_miles):
-                in_range.append(r.supplier)
-                continue
-            self._verdicts[r.supplier.phone] = SupplierVerdict(
-                supplier=r.supplier,
-                distance_miles=r.distance_miles,
-                status=SupplierStatus.REJECTED,
-                reason="outside service radius",
-                attempts=0,
-            )
-        return in_range
-
     async def _screen(self, inp: SourcingInput, supplier: Supplier, attempt: int, distance: float | None) -> SupplierVerdict:
         request = CallRequest(
             case_id=inp.case_id,
@@ -122,6 +104,7 @@ class SupplierSourcingWorkflow:
             reason=assessment.reason,
             attempts=attempt,
             delivery_eta_days=outcome.supplier.delivery_eta_days if outcome.supplier else None,
+            accepts_assignment=outcome.supplier.accepts_assignment if outcome.supplier else None,
             call_id=request.call_id,
         )
         self._verdicts[supplier.phone] = verdict
@@ -129,10 +112,7 @@ class SupplierSourcingWorkflow:
         return verdict
 
     async def _finish(self, inp: SourcingInput, qualified: list[SupplierVerdict]) -> SourcingResult:
-        ordered = sorted(
-            qualified,
-            key=lambda v: (v.delivery_eta_days or UNKNOWN_ETA_RANK, v.distance_miles or 0.0),
-        )
+        ordered = order_candidates(qualified)
         others = [v for v in self._verdicts.values() if v.status is not SupplierStatus.QUALIFIED]
         escalation_id = None
         if not ordered:

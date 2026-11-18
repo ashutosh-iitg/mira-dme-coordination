@@ -14,14 +14,27 @@ from mira.activities import CallActivities
 from mira.case_activities import CaseActivities
 from mira.config import CASE_TASK_QUEUE, SCENARIOS_DIR, VOICE_CALL_TASK_QUEUE
 from mira.data import load_case
+from mira.escalation_store import EscalationStore
 from mira.events import EventLog
+from mira.extraction import StructuredCompleter
+from mira.llm import LlmError
 from mira.mock_fax import MockFaxInbox
-from mira.models import CaseInput, CaseOutcome, HandoffResult, HumanAction, OrderOutcomeStatus
-from mira.reviews import ReviewNotFound, send_decision
-from mira.voice.agent import MockVoiceAgent, Scenario, load_scenario
+from mira.models import (
+    CallDisposition,
+    CallPurpose,
+    CaseInput,
+    CaseOutcome,
+    HandoffResult,
+    HumanAction,
+    OrderInput,
+    OrderOutcomeStatus,
+)
+from mira.reviews import ReviewNotFound, complete_callback, send_decision
+from mira.voice.agent import MockVoiceAgent, RawCall, Scenario, ScriptedParty, load_scenario
 from mira.worker import WORKFLOWS, case_activity_methods
 from mira.workflows.case import CaseWorkflow
 from mira.workflows.human_review import HumanReviewWorkflow, review_workflow_id
+from mira.workflows.pcp_order import PcpOrderWorkflow
 from tests.fakes import fake_complete
 
 SECONDS_PER_DAY = 60.0
@@ -35,11 +48,13 @@ async def env() -> AsyncIterator[WorkflowEnvironment]:
 
 
 @asynccontextmanager
-async def running_workers(client: Client, scenario: Scenario, runtime: Path) -> AsyncIterator[Path]:
+async def running_workers(
+    client: Client, scenario: Scenario, runtime: Path, complete: StructuredCompleter = fake_complete
+) -> AsyncIterator[Path]:
     events = EventLog(runtime / "events.jsonl")
     escalations = runtime / "escalations.json"
-    calls = CallActivities(MockVoiceAgent(scenario), events, complete=fake_complete)
-    case = CaseActivities(events, MockFaxInbox(scenario), escalations_path=escalations)
+    calls = CallActivities(MockVoiceAgent(scenario), events, complete=complete)
+    case = CaseActivities(events, MockFaxInbox(scenario), store=EscalationStore(escalations))
     async with (
         Worker(client, task_queue=CASE_TASK_QUEUE, workflows=WORKFLOWS, activities=case_activity_methods(case)),
         Worker(client, task_queue=VOICE_CALL_TASK_QUEUE, activities=[calls.place_call]),
@@ -92,8 +107,15 @@ async def test_default_scenario_schedules_delivery_after_primary_goes_silent(
     assert plan_contact.reached and plan_contact.escalation_id
     assert delivery_contact.reached and delivery_contact.escalation_id is None
 
-    escalations = json.loads(escalations_path.read_text())
-    assert [e["context"]["blocking"] for e in escalations] == ["false"]
+    store = EscalationStore(escalations_path)
+    callbacks = store.open_callbacks()
+    assert [c.escalation_id for c in callbacks] == [plan_contact.escalation_id]
+
+    complete_callback(store, plan_contact.escalation_id, "explained the 20% and folding")
+    assert store.open_callbacks() == []
+    assert store.get(plan_contact.escalation_id)["status"] == "completed"
+    with pytest.raises(ReviewNotFound, match="already completed"):
+        complete_callback(store, plan_contact.escalation_id, "again")
 
 
 async def test_nobody_reachable_waits_for_human_then_closes(env: WorkflowEnvironment, tmp_path: Path) -> None:
@@ -128,3 +150,89 @@ async def test_pcp_needing_info_escalates_with_the_reason(env: WorkflowEnvironme
     assert summary.order.status is OrderOutcomeStatus.ESCALATED
     assert [v.supplier.supplier_name for v in summary.sourcing.qualified] == ["Prairie State Medical Supply"]
     assert order_escalation in {e["escalation_id"] for e in json.loads(escalations_path.read_text())}
+
+
+class FlakyProvider:
+    """LLM provider that is down until `recover()` is called."""
+
+    def __init__(self) -> None:
+        self.healthy = False
+
+    def recover(self) -> None:
+        self.healthy = True
+
+    async def __call__(self, system_prompt: str, user_prompt: str, schema: type) -> object:
+        if not self.healthy:
+            raise LlmError("provider down: 503 from upstream")
+        return await fake_complete(system_prompt, user_prompt, schema)
+
+
+async def test_provider_outage_becomes_technical_review_and_retry_recovers(
+    env: WorkflowEnvironment, scenario: Scenario, tmp_path: Path
+) -> None:
+    provider = FlakyProvider()
+
+    async with running_workers(env.client, scenario, tmp_path, complete=provider) as escalations_path:
+        handle = await _start_case(env.client)
+        sourcing_review = f"{handle.id}:technical-sourcing"
+        order_review = f"{handle.id}:technical-pcp-order"
+        store = EscalationStore(escalations_path)
+        while store.get(sourcing_review) is None or store.get(order_review) is None:
+            await env.sleep(SECONDS_PER_DAY)
+
+        provider.recover()
+        await _decide_once_waiting(env, sourcing_review, HumanAction.RETRY, "OpenRouter back up")
+        await _decide_once_waiting(env, order_review, HumanAction.RETRY, "OpenRouter back up")
+        summary = await handle.result()
+
+    assert summary.outcome is CaseOutcome.DELIVERY_SCHEDULED
+    record = store.get(sourcing_review)
+    assert record["reason"] == "Technical failure in sourcing: LlmError"
+    assert "provider down" in record["context"]["error"]
+    assert record["status"] == "resolved" and record["action"] == "retry"
+    assert {sourcing_review, order_review} <= set(summary.escalations)
+
+
+def _pcp_first_answer_scenario(transcript: str, scenario: Scenario) -> Scenario:
+    pcp_phone = load_case().pcp.phone
+    office = ScriptedParty(
+        name="Sunrise Family Medicine",
+        calls={CallPurpose.PCP_ORDER_REQUEST: [RawCall(disposition=CallDisposition.CONNECTED, transcript=transcript)]},
+    )
+    return Scenario(description="first answer", parties={pcp_phone: office}, written_orders=scenario.written_orders[1:])
+
+
+async def _run_order_chase(env: WorkflowEnvironment, scenario: Scenario, tmp_path: Path):
+    case = load_case()
+    async with running_workers(env.client, scenario, tmp_path):
+        return await env.client.execute_workflow(
+            PcpOrderWorkflow.run,
+            OrderInput(
+                case_id=case.case_id,
+                patient_name=case.patient.name,
+                equipment=case.equipment,
+                pcp=case.pcp,
+                seconds_per_day=SECONDS_PER_DAY,
+            ),
+            id=f"test-order-{uuid.uuid4()}",
+            task_queue=CASE_TASK_QUEUE,
+        )
+
+
+async def test_signed_on_first_call_checks_inbox_without_waiting(env: WorkflowEnvironment, scenario: Scenario, tmp_path: Path) -> None:
+    first = _pcp_first_answer_scenario("Office: Good timing, Dr. Chen signed it this morning and we faxed it over.", scenario)
+
+    result = await _run_order_chase(env, first, tmp_path)
+
+    assert result.status is OrderOutcomeStatus.VALID
+    assert result.nudges == 0
+
+
+async def test_needs_info_on_first_call_escalates_immediately(env: WorkflowEnvironment, scenario: Scenario, tmp_path: Path) -> None:
+    first = _pcp_first_answer_scenario("Office: Dr. Chen wants a mobility assessment from PT before she signs.", scenario)
+
+    result = await _run_order_chase(env, first, tmp_path)
+
+    assert result.status is OrderOutcomeStatus.ESCALATED
+    assert result.nudges == 0
+    assert result.escalation_id.endswith(":pcp-needs-info")

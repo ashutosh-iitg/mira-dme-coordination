@@ -7,7 +7,7 @@
         "supplier_screen": [
           {
             "disposition": "connected",
-            "transcript": "Supplier: Prairie State Medical, this is Priya.\nAgent: Hi Priya, this is Mira, an automated care coordinator for Eleanor Martinez, Original Medicare Part B. She needs a standard manual wheelchair, K0001, delivered to 60614. Are you taking new Medicare patients?\nSupplier: We are. And we stock K0001, we've got plenty.\nAgent: Do you deliver to 60614?\nSupplier: We cover the whole north side, so yes. Usually about four days after we get a signed order.\nAgent: Can I confirm you'll take her case?\nSupplier: Sure, happy to."
+            "transcript": "Supplier: Prairie State Medical, this is Priya.\nAgent: Hi Priya, this is Mira, an automated care coordinator for Eleanor Martinez, Original Medicare Part B. She needs a standard manual wheelchair, K0001, delivered to 60614. Are you taking new Medicare patients?\nSupplier: We are, and we accept assignment. And we stock K0001, we've got plenty.\nAgent: Do you deliver to 60614?\nSupplier: We cover the whole north side, so yes. Usually about four days after we get a signed order.\nAgent: Can I confirm you'll take her case?\nSupplier: Sure, happy to."
           }
         ]
       }

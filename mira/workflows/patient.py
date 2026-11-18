@@ -5,26 +5,37 @@ with workflow.unsafe.imports_passed_through():
     from mira.policy import MIN_EXTRACTION_CONFIDENCE
     from mira.workflows.common import call_id, escalate, log_event, place_call, sleep_days
 
-COST_SHARE_POINT = (
-    "Medicare Part B pays 80% of the Medicare-approved amount after the yearly Part B deductible; "
-    "with no supplemental plan she owes the other ~20%, billed by the supplier after delivery"
-)
 MAX_PATIENT_CALLS = 3
 PATIENT_RETRY_DAYS = 0.5
 
 
-def plan_points(supplier_name: str, pcp_name: str) -> list[str]:
+def cost_share_point(supplier_name: str, accepts_assignment: bool | None) -> str:
+    """Medicare's ~20% applies when the supplier accepts assignment; otherwise they may charge more."""
+    base = "Medicare Part B pays 80% of the Medicare-approved amount after the yearly Part B deductible"
+    if accepts_assignment:
+        return f"{base}; {supplier_name} accepts assignment, so with no supplemental plan she owes about 20%, billed after delivery"
+    return (
+        f"{base}; she owes about 20% only if {supplier_name} accepts assignment, which we have not confirmed yet. "
+        "A supplier that doesn't accept assignment can charge more, so we will confirm before delivery"
+    )
+
+
+def plan_points(supplier_name: str, pcp_name: str, accepts_assignment: bool | None) -> list[str]:
     return [
         f"{pcp_name} signed the written order",
         f"{supplier_name} has agreed to supply the wheelchair",
-        COST_SHARE_POINT,
+        cost_share_point(supplier_name, accepts_assignment),
         "Nothing for her to do yet; we'll call when delivery is scheduled",
     ]
 
 
-def delivery_points(supplier_name: str, eta_days: int | None) -> list[str]:
-    when = f"in about {eta_days} days" if eta_days is not None else "soon; the supplier will call to set a time"
-    return [f"{supplier_name} has scheduled delivery {when}", COST_SHARE_POINT, "Someone should be home to receive it"]
+def delivery_points(supplier_name: str, eta_days: int | None, accepts_assignment: bool | None) -> list[str]:
+    when = f"for about {eta_days} days from now" if eta_days is not None else "(the supplier will call her to set the time)"
+    return [
+        f"{supplier_name} confirmed delivery is scheduled {when}",
+        cost_share_point(supplier_name, accepts_assignment),
+        "Someone should be home to receive it",
+    ]
 
 
 class PatientLiaison:
@@ -45,7 +56,8 @@ class PatientLiaison:
         needs_follow_up = (
             result is None
             or outcome.confidence < MIN_EXTRACTION_CONFIDENCE
-            or result.understood_cost_share is False
+            or result.understood_cost_share is not True
+            or result.understood_next_steps is False
             or bool(result.open_questions)
         )
         escalation_id = None

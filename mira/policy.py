@@ -3,12 +3,10 @@
 from dataclasses import dataclass
 from enum import StrEnum
 
-from mira.models import CallDisposition, CallOutcome, WrittenOrder
+from mira.models import CallDisposition, CallOutcome, DeliveryStatus, SupplierVerdict, WrittenOrder
 
 MIN_EXTRACTION_CONFIDENCE = 0.6
-MAX_SERVICE_RADIUS_MILES = 15.0
-MAX_VISIT_TO_ORDER_DAYS = 180
-REQUIRED_DESCRIPTION_TERMS = ("manual", "wheelchair")
+REQUIRED_DESCRIPTION_TERM = "wheelchair"
 
 
 class ScreenDecision(StrEnum):
@@ -45,6 +43,7 @@ def assess_supplier_call(outcome: CallOutcome, equipment_code: str) -> SupplierA
         for label, value in (
             ("accepting new patients", screen.accepting_new_medicare_patients),
             ("in stock", screen.has_equipment_in_stock),
+            ("delivers to patient's area", screen.serves_patient_area),
             ("committed", screen.committed_to_deliver),
         )
         if value is None
@@ -61,17 +60,25 @@ class FollowupDecision(StrEnum):
 
 
 def assess_followup(outcome: CallOutcome) -> FollowupDecision:
-    """After handoff, only an explicit commitment or a delivery date counts as scheduled."""
-    screen = outcome.supplier
-    if outcome.disposition is not CallDisposition.CONNECTED or screen is None:
+    """After handoff, only explicit scheduling evidence counts; typical timing or a bare 'yes' does not."""
+    followup = outcome.followup
+    if outcome.disposition is not CallDisposition.CONNECTED or followup is None:
         return FollowupDecision.RETRY
     if outcome.confidence < MIN_EXTRACTION_CONFIDENCE:
         return FollowupDecision.RETRY
-    if screen.committed_to_deliver is False or screen.has_equipment_in_stock is False:
+    if followup.delivery_status is DeliveryStatus.DECLINED:
         return FollowupDecision.DECLINED
-    if screen.committed_to_deliver or screen.delivery_eta_days is not None:
+    if followup.delivery_status is DeliveryStatus.SCHEDULED and followup.order_received is not False:
         return FollowupDecision.SCHEDULED
     return FollowupDecision.RETRY
+
+
+def order_candidates(qualified: list[SupplierVerdict]) -> list[SupplierVerdict]:
+    """Primary first: soonest known delivery (0 = same day), then closest; unknown ETAs go last."""
+    return sorted(
+        qualified,
+        key=lambda v: (v.delivery_eta_days is None, v.delivery_eta_days or 0, v.distance_miles or 0.0),
+    )
 
 
 def claim_code_problems(order: WrittenOrder, ordered_code: str) -> list[str]:
@@ -81,29 +88,26 @@ def claim_code_problems(order: WrittenOrder, ordered_code: str) -> list[str]:
     return []
 
 
-def within_service_radius(distance_miles: float | None) -> bool:
-    return distance_miles is None or distance_miles <= MAX_SERVICE_RADIUS_MILES
-
-
 def validate_order(order: WrittenOrder, expected_code: str, patient_name: str) -> list[str]:
-    """Checks Standard Written Order elements and code match before a claim can be billed."""
+    """Case-specific consistency checks on the written order before it goes to a supplier.
+
+    Mirrors the CMS standard written order elements (beneficiary name, order date, item description,
+    quantity, practitioner name or NPI, signature) plus a code match against what this patient needs.
+    Passing is NOT a coverage determination: medical necessity documentation stays with the PCP and supplier.
+    """
     problems: list[str] = []
     if order.hcpcs_code.strip().upper() != expected_code.upper():
         problems.append(f"HCPCS code is {order.hcpcs_code}, expected {expected_code}")
-    description = order.item_description.lower()
-    if not all(term in description for term in REQUIRED_DESCRIPTION_TERMS):
-        problems.append(f"item description {order.item_description!r} does not describe a manual wheelchair")
+    if REQUIRED_DESCRIPTION_TERM not in order.item_description.lower():
+        problems.append(f"item description {order.item_description!r} does not describe a wheelchair")
     if order.quantity != 1:
         problems.append(f"quantity is {order.quantity}, expected 1")
     if order.patient_name.strip().casefold() != patient_name.strip().casefold():
         problems.append(f"patient name {order.patient_name!r} does not match {patient_name!r}")
-    if not order.prescriber_npi:
-        problems.append("prescriber NPI missing")
+    if not order.prescriber_name.strip() and not order.prescriber_npi:
+        problems.append("treating practitioner name or NPI missing")
     if not order.signed:
         problems.append("order is not signed")
-    visit_gap_days = (order.order_date - order.face_to_face_date).days
-    if visit_gap_days < 0:
-        problems.append("order is dated before the face-to-face visit")
-    elif visit_gap_days > MAX_VISIT_TO_ORDER_DAYS:
-        problems.append(f"face-to-face visit is {visit_gap_days} days before the order (max {MAX_VISIT_TO_ORDER_DAYS})")
+    if order.order_date < order.face_to_face_date:
+        problems.append("order is dated before the visit it is based on")
     return problems

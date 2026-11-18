@@ -74,8 +74,26 @@ class SupplierScreenResult(Frozen):
     accepting_new_medicare_patients: bool | None
     has_equipment_in_stock: bool | None
     serves_patient_area: bool | None
-    delivery_eta_days: int | None
+    delivery_eta_days: int | None = Field(default=None, ge=0)
     committed_to_deliver: bool | None
+    accepts_assignment: bool | None = None
+    notes: str
+
+
+class DeliveryStatus(StrEnum):
+    SCHEDULED = "scheduled"
+    TENTATIVE = "tentative"
+    NOT_SCHEDULED = "not_scheduled"
+    DECLINED = "declined"
+    UNCLEAR = "unclear"
+
+
+class FollowupResult(Frozen):
+    """What a supplier says after receiving the order; kept separate from screening on purpose."""
+
+    order_received: bool | None
+    delivery_status: DeliveryStatus
+    delivery_eta_days: int | None = Field(default=None, ge=0)
     notes: str
 
 
@@ -109,6 +127,7 @@ class CallOutcome(Frozen):
     transcript: str
     confidence: float = Field(ge=0.0, le=1.0)
     supplier: SupplierScreenResult | None = None
+    followup: FollowupResult | None = None
     pcp: PcpOrderResult | None = None
     patient: PatientUpdateResult | None = None
 
@@ -174,6 +193,7 @@ class SupplierVerdict(Frozen):
     reason: str
     attempts: int
     delivery_eta_days: int | None = None
+    accepts_assignment: bool | None = None
     call_id: str | None = None
 
 
@@ -267,6 +287,7 @@ class FulfillmentInput(Frozen):
 class HandoffResult(StrEnum):
     SCHEDULED = "scheduled"
     DECLINED = "declined"
+    UNCONFIRMED = "unconfirmed"
     SILENT = "silent"
 
 

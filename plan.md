@@ -77,6 +77,16 @@ place_call:   MockVoiceAgent → transcript → LLM extraction → CallOutcome
 - [x] README (run steps, human console, what's mocked) and WRITEUP (sequencing, architecture, cut list, what's next)
 - [x] 28 tests: unit + full-case workflow tests on Temporal's time-skipping server
 
+## Review follow-ups (REVIEW.md), done in its priority order ✅
+- [x] 1. Delivery needs scheduling evidence: separate follow-up extraction (`order_received`, `delivery_status`); only explicit `scheduled` completes; tentative ETAs retry; non-negative ETAs; never-confirmed is `unconfirmed`, not `silent`
+- [x] 4. Coverage: service area must be affirmatively confirmed; no distance cutoff (distance only orders calls); same-day ETA (0) ranks first
+- [x] 2. Callbacks in the inbox: `mira.human list` merges Temporal reviews + open callbacks; `done` completes a callback without touching the case; atomic escalation store
+- [x] 3. Technical failures: child-step failures become blocking technical reviews (step + error category); `retry` re-runs the step; patient-call failures become callbacks
+- [x] 5. First PCP answer drives the next action (signed → inbox now; needs info → review now); contact name and expected timing used
+- [x] 6. Language: SWO-aligned consistency checks (name or NPI; no blanket 180-day rule), assignment-qualified cost share, necessity documentation requested, unclear patient understanding → callback
+- [x] 45 tests; live Temporal Cloud run with the real model after the schema change
+- [x] Review verification: 46 tests including structured delivery-follow-up evidence in the event log; see `FOLLOWUP_REVIEW.md`
+
 ## Cut list
 - Real telephony / voice AI (behind `VoiceAgent`), inbound calls (simulated by signals)
 - DB, auth, UI (Temporal UI shows state)

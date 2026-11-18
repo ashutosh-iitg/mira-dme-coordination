@@ -1,6 +1,9 @@
 import asyncio
+from collections.abc import Awaitable, Callable
+from typing import Any, TypeVar
 
 from temporalio import workflow
+from temporalio.exceptions import ActivityError, ChildWorkflowError
 
 with workflow.unsafe.imports_passed_through():
     from mira.case_activities import CaseActivities
@@ -22,12 +25,24 @@ with workflow.unsafe.imports_passed_through():
         SourcingInput,
         SourcingResult,
     )
-    from mira.workflows.common import CASE_ACTIVITY_TIMEOUT, DEFAULT_RETRY, log_event
+    from mira.workflows.common import CASE_ACTIVITY_TIMEOUT, DEFAULT_RETRY, escalate, log_event
     from mira.workflows.fulfillment import FulfillmentWorkflow
     from mira.workflows.human_review import HumanReviewWorkflow, review_workflow_id
     from mira.workflows.patient import PatientLiaison, delivery_points, plan_points
     from mira.workflows.pcp_order import PcpOrderWorkflow
     from mira.workflows.sourcing import SupplierSourcingWorkflow
+
+
+StepResult = TypeVar("StepResult", SourcingResult, OrderResult, FulfillmentResult)
+MAX_ERROR_DETAIL_CHARS = 300
+
+
+def failure_category(error: BaseException) -> tuple[str, str]:
+    """Walk Temporal's failure chain to the root cause, e.g. ChildWorkflowError -> ActivityError -> LlmError."""
+    root = error
+    while getattr(root, "cause", None) is not None:
+        root = root.cause
+    return getattr(root, "type", None) or type(root).__name__, str(root)[:MAX_ERROR_DETAIL_CHARS]
 
 
 class CaseClosed(Exception):
@@ -94,14 +109,18 @@ class CaseWorkflow:
         await self._ensure_order(inp)
 
         self._stage = "updating patient on the plan"
-        primary = self._sourcing.qualified[0].supplier.supplier_name
-        await self._contact_patient(inp, "plan", plan_points(primary, inp.case.pcp.name))
+        primary = self._sourcing.qualified[0]
+        await self._contact_patient(
+            inp, "plan", plan_points(primary.supplier.supplier_name, inp.case.pcp.name, primary.accepts_assignment)
+        )
 
         await self._deliver(inp)
         scheduled = self._fulfillment.scheduled_with
         self._stage = "updating patient on delivery"
         await self._contact_patient(
-            inp, "delivery", delivery_points(scheduled.supplier.supplier_name, self._fulfillment.delivery_eta_days)
+            inp,
+            "delivery",
+            delivery_points(scheduled.supplier.supplier_name, self._fulfillment.delivery_eta_days, scheduled.accepts_assignment),
         )
 
     async def _ensure_supplier(self, inp: CaseInput, excluded_phones: list[str]) -> None:
@@ -163,13 +182,47 @@ class CaseWorkflow:
             raise CaseClosed(decision.note or "closed by care advocate")
 
     async def _contact_patient(self, inp: CaseInput, milestone: str, points: list[str]) -> None:
-        contact = await self._patient.update(inp.case, milestone, points, inp.seconds_per_day)
+        try:
+            contact = await self._patient.update(inp.case, milestone, points, inp.seconds_per_day)
+        except ActivityError as error:
+            category, detail = failure_category(error)
+            escalation_id = await escalate(
+                self._case_id,
+                f"patient-update-failed-{milestone}",
+                f"Patient update could not be placed ({category}); call her manually",
+                blocking=False,
+                error=detail,
+            )
+            contact = PatientContact(milestone=milestone, reached=False, escalation_id=escalation_id)
         self._contacts.append(contact)
         self._track(contact.escalation_id)
 
+    async def _run_child(self, kind: str, run: Callable[[Any], Awaitable[StepResult]], arg: object) -> StepResult:
+        """Business escalations come back inside results; technical failures (activity retries exhausted,
+        non-retryable config errors) surface as ChildWorkflowError and become a blocking technical review."""
+        while True:
+            child_id = self._child_id(kind)
+            try:
+                result = await workflow.execute_child_workflow(run, arg, id=child_id)
+            except ChildWorkflowError as error:
+                category, detail = failure_category(error)
+                escalation_id = await escalate(
+                    self._case_id,
+                    f"technical-{child_id.rsplit('/', 1)[-1]}",
+                    f"Technical failure in {kind}: {category}",
+                    step=kind,
+                    error=detail,
+                )
+                self._track(escalation_id)
+                await self._await_human(escalation_id)
+                continue
+            self._track(result.escalation_id)
+            return result
+
     async def _run_sourcing(self, inp: CaseInput, excluded_phones: list[str]) -> SourcingResult:
         case = inp.case
-        result = await workflow.execute_child_workflow(
+        return await self._run_child(
+            "sourcing",
             SupplierSourcingWorkflow.run,
             SourcingInput(
                 case_id=case.case_id,
@@ -178,14 +231,12 @@ class CaseWorkflow:
                 seconds_per_day=inp.seconds_per_day,
                 excluded_phones=excluded_phones,
             ),
-            id=self._child_id("sourcing"),
         )
-        self._track(result.escalation_id)
-        return result
 
     async def _run_order(self, inp: CaseInput) -> OrderResult:
         case = inp.case
-        result = await workflow.execute_child_workflow(
+        return await self._run_child(
+            "pcp-order",
             PcpOrderWorkflow.run,
             OrderInput(
                 case_id=case.case_id,
@@ -194,14 +245,12 @@ class CaseWorkflow:
                 pcp=case.pcp,
                 seconds_per_day=inp.seconds_per_day,
             ),
-            id=self._child_id("pcp-order"),
         )
-        self._track(result.escalation_id)
-        return result
 
     async def _run_fulfillment(self, inp: CaseInput) -> FulfillmentResult:
         case = inp.case
-        result = await workflow.execute_child_workflow(
+        return await self._run_child(
+            "fulfillment",
             FulfillmentWorkflow.run,
             FulfillmentInput(
                 case_id=case.case_id,
@@ -212,10 +261,7 @@ class CaseWorkflow:
                 candidates=self._sourcing.qualified,
                 seconds_per_day=inp.seconds_per_day,
             ),
-            id=self._child_id("fulfillment"),
         )
-        self._track(result.escalation_id)
-        return result
 
     def _child_id(self, kind: str) -> str:
         run = self._child_runs.get(kind, 0) + 1

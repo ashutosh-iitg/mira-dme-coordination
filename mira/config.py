@@ -12,6 +12,7 @@ SUPPLIER_DIRECTORY_PATH = PROJECT_ROOT / "sample_dir.csv"
 CASE_PATH = DATA_DIR / "case.json"
 SCENARIOS_DIR = DATA_DIR / "scenarios"
 EVENT_LOG_PATH = RUNTIME_DIR / "events.jsonl"
+ESCALATIONS_PATH = RUNTIME_DIR / "escalations.json"
 DEFAULT_SCENARIO = "default"
 
 CASE_TASK_QUEUE = "dme-cases"

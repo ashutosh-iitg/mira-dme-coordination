@@ -23,6 +23,7 @@ class CallActivities:
         except ConfigError as exc:
             raise ApplicationError(str(exc), type="ConfigError", non_retryable=True) from exc
 
+        result = outcome.supplier or outcome.followup or outcome.pcp or outcome.patient
         self._events.append(
             request.case_id,
             "call_completed",
@@ -33,7 +34,7 @@ class CallActivities:
                 "attempt": request.attempt,
                 "disposition": outcome.disposition,
                 "confidence": outcome.confidence,
-                "result": (outcome.supplier or outcome.pcp or outcome.patient),
+                "result": result.model_dump(mode="json") if result else None,
             },
         )
         return outcome

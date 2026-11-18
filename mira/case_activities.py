@@ -1,12 +1,10 @@
-import json
 import logging
-from pathlib import Path
 
 from temporalio import activity
 from temporalio.exceptions import ApplicationError
 
-from mira.config import RUNTIME_DIR
 from mira.data import load_suppliers
+from mira.escalation_store import EscalationStore
 from mira.events import EventLog
 from mira.mock_fax import MockFaxInbox
 from mira.models import (
@@ -24,14 +22,11 @@ from mira.ranking import load_zip_centroids, rank_by_distance
 
 logger = logging.getLogger(__name__)
 
-ESCALATIONS_PATH = RUNTIME_DIR / "escalations.json"
-
-
 class CaseActivities:
-    def __init__(self, events: EventLog, fax_inbox: MockFaxInbox, escalations_path: Path = ESCALATIONS_PATH) -> None:
+    def __init__(self, events: EventLog, fax_inbox: MockFaxInbox, store: EscalationStore | None = None) -> None:
         self._events = events
         self._fax_inbox = fax_inbox
-        self._escalations_path = escalations_path
+        self._store = store or EscalationStore()
 
     @activity.defn
     async def rank_suppliers(self, request: RankRequest) -> list[RankedSupplier]:
@@ -61,14 +56,9 @@ class CaseActivities:
     @activity.defn
     async def escalate(self, escalation: Escalation) -> str:
         """Idempotent on escalation_id so activity retries never duplicate a human task."""
-        existing = self._read_escalations()
-        if any(e.get("escalation_id") == escalation.escalation_id for e in existing):
-            return escalation.escalation_id
-        self._escalations_path.parent.mkdir(parents=True, exist_ok=True)
-        updated = [*existing, {**escalation.model_dump(mode="json"), "status": "open"}]
-        self._escalations_path.write_text(json.dumps(updated, indent=2), encoding="utf-8")
-        self._events.append(escalation.case_id, "escalated", {"escalation_id": escalation.escalation_id, "reason": escalation.reason})
-        logger.warning("Escalated %s: %s", escalation.escalation_id, escalation.reason)
+        if self._store.add(escalation):
+            self._events.append(escalation.case_id, "escalated", {"escalation_id": escalation.escalation_id, "reason": escalation.reason})
+            logger.warning("Escalated %s: %s", escalation.escalation_id, escalation.reason)
         return escalation.escalation_id
 
     @activity.defn
@@ -83,30 +73,16 @@ class CaseActivities:
     @activity.defn
     async def resolve_escalation(self, resolution: ResolveEscalation) -> None:
         resolved = {"status": "resolved", "action": resolution.action.value, "note": resolution.note}
-        updated = [
-            {**e, **resolved} if e.get("escalation_id") == resolution.escalation_id else e for e in self._read_escalations()
-        ]
-        self._escalations_path.parent.mkdir(parents=True, exist_ok=True)
-        self._escalations_path.write_text(json.dumps(updated, indent=2), encoding="utf-8")
-        self._events.append(
-            resolution.case_id, "escalation_resolved", {"escalation_id": resolution.escalation_id, **resolved}
-        )
+        self._store.update(resolution.escalation_id, resolved)
+        self._events.append(resolution.case_id, "escalation_resolved", {"escalation_id": resolution.escalation_id, **resolved})
 
     @activity.defn
     async def get_escalation(self, escalation_id: str) -> Escalation:
-        for record in self._read_escalations():
-            if record.get("escalation_id") == escalation_id:
-                return Escalation.model_validate({k: record[k] for k in Escalation.model_fields})
-        raise ApplicationError(f"Escalation {escalation_id} not found", type="EscalationNotFound", non_retryable=True)
+        escalation = self._store.get_escalation(escalation_id)
+        if escalation is None:
+            raise ApplicationError(f"Escalation {escalation_id} not found", type="EscalationNotFound", non_retryable=True)
+        return escalation
 
     @activity.defn
     async def record_event(self, event: CaseEvent) -> None:
         self._events.append(event.case_id, event.kind, event.details)
-
-    def _read_escalations(self) -> list[dict]:
-        if not self._escalations_path.exists():
-            return []
-        try:
-            return json.loads(self._escalations_path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"Escalations file {self._escalations_path} is corrupt: {exc}") from exc

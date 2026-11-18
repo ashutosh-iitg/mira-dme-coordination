@@ -53,9 +53,9 @@ The case log is in `runtime/events.jsonl`; escalations are in `runtime/escalatio
 
 **Default scenario** — what you should see: Lakeshore isn't taking Medicare patients, Halsted is out of stock,
 Lincoln Park doesn't answer then says yes on the callback; the PCP office loses the request (re-faxed), then
-sends an order coded K0003 without an NPI (caught, fix-up call, corrected); Lincoln Park goes silent after
-handoff, so the case falls back to Prairie State, which schedules delivery. The patient's cost questions become
-a non-blocking callback for a human.
+sends an order coded K0003 (caught, fix-up call, corrected); Lincoln Park goes silent after handoff, so the
+case falls back to Prairie State, which explicitly confirms a scheduled delivery. The patient's cost questions
+become a non-blocking callback in the human inbox.
 
 ### When the case needs a human
 
@@ -71,13 +71,21 @@ details explaining what's needed. The case workflow sits on it until a decision 
 ```
 
 `retry` re-runs the step that escalated; `close` ends the case with your note; `skip` leaves it waiting.
-Use `--no-prompt` to never prompt. From any other terminal (works against Temporal, not local files):
+Use `--no-prompt` to never prompt. From any other terminal:
 
 ```bash
-uv run python -m mira.human list                                   # reviews waiting on Temporal
+uv run python -m mira.human list                                   # everything that needs a person
 uv run python -m mira.human status <case-workflow-id>              # live case state (Temporal query)
-uv run python -m mira.human decide <escalation-id> retry|close --note "..."
+uv run python -m mira.human decide <escalation-id> retry|close --note "..."   # blocking review
+uv run python -m mira.human done <escalation-id> --note "..."                 # callback
 ```
+
+The inbox has two kinds of item:
+
+| Kind | Raised when | Case | Resolve with |
+|---|---|---|---|
+| **Review** (`HumanReviewWorkflow`, from Temporal) | no supplier confirmed, order stalled/needs info, no delivery confirmed, **technical failure** (LLM/provider/config errors that outlast retries) | paused | `decide retry` re-runs the step; `decide close` ends the case |
+| **Callback** (from `runtime/escalations.json`) | patient unreachable, has questions, or unclear on cost/next steps | keeps going | `done`; completing it never touches or reopens the case |
 
 **Try it:** restart the worker with `SCENARIO=escalation uv run python -m mira.worker` and run `start_case`.
 About a minute in, the PCP office says Dr. Chen won't sign without a mobility assessment, and the case
@@ -91,9 +99,22 @@ running on wall-clock time while the worker is down, so a long outage can legiti
 uv run pytest
 ```
 
-Unit tests cover policy, ranking, data loading, extraction routing and the call activity. Workflow tests run the
-full case (default, all-silent, escalation scenarios) on Temporal's time-skipping test server with a fake LLM;
-the test server binary is downloaded on first run.
+Unit tests cover policy (screening, explicit-scheduling follow-ups, order consistency), ranking, the escalation
+store and callback lifecycle, data loading, extraction routing and the call activity. Workflow tests run on
+Temporal's time-skipping test server with a fake LLM: the default case end to end, all-silent and needs-info
+escalations closed by a human, a forced LLM-provider outage recovered by a human `retry`, and the PCP office's
+first answer acted on immediately. The fake LLM tests orchestration, not extraction quality. The test server
+binary is downloaded on first run.
+
+## What the order checks do and don't mean
+
+`validate_order` checks the written order is consistent with this case: CMS standard-written-order elements
+(beneficiary, order date, item description, quantity, practitioner name **or** NPI, signature) and an HCPCS match
+with the K0001 being delivered. Passing it is **not** a coverage determination: medical necessity (mobility
+limitation, why a cane or walker isn't enough, use at home) is requested from the PCP and left to the PCP and
+supplier. Eleanor's ~20% share is quoted as conditional on the supplier accepting Medicare assignment, which
+screening asks about. The case ends at a delivery the supplier **explicitly confirmed as scheduled**: typical
+timing ("usually four days") does not count.
 
 ## What's real and what's mocked
 
@@ -102,7 +123,7 @@ the test server binary is downloaded on first run.
 | Temporal Cloud workflows, durable timers, retries, signals, queries | Phone calls: `MockVoiceAgent` replays scripted transcripts per party/purpose/attempt |
 | LLM extraction of every connected call (OpenRouter) | Fax out (order request, handoff) and fax in (signed orders from the scenario) |
 | Supplier directory from `sample_dir.csv`; distance ranking | Patient phone and home ZIP (not in intake; placeholders in `data/case.json`) |
-| Order validation, qualification, escalation logic | Delivery itself, claim submission, eligibility checks |
+| Order consistency checks, qualification, escalation logic | Delivery itself, claim submission, eligibility and medical-necessity review |
 
 ## Layout
 

@@ -46,7 +46,7 @@
         "supplier_screen": [
           {
             "disposition": "connected",
-            "transcript": "Supplier: Prairie State Medical, this is Priya.\nAgent: Hi Priya, this is Mira, an automated care coordinator for Eleanor Martinez, Original Medicare Part B. She needs a standard manual wheelchair, K0001, delivered to 60614. Are you taking new Medicare patients?\nSupplier: We are. And we stock K0001, we've got plenty.\nAgent: Do you deliver to 60614?\nSupplier: We cover the whole north side, so yes. Usually about four days after we get a signed order and verify eligibility.\nAgent: Can I confirm you'll take her case?\nSupplier: Sure, happy to. Just get us the written order."
+            "transcript": "Supplier: Prairie State Medical, this is Priya.\nAgent: Hi Priya, this is Mira, an automated care coordinator for Eleanor Martinez, Original Medicare Part B. She needs a standard manual wheelchair, K0001, delivered to 60614. Are you taking new Medicare patients?\nSupplier: We are, and we accept assignment. And we stock K0001, we've got plenty.\nAgent: Do you deliver to 60614?\nSupplier: We cover the whole north side, so yes. Usually about four days after we get a signed order and verify eligibility.\nAgent: Can I confirm you'll take her case?\nSupplier: Sure, happy to. Just get us the written order."
           }
         ],
         "supplier_followup": [
@@ -77,7 +77,7 @@
           },
           {
             "disposition": "connected",
-            "transcript": "Office: Sunrise Family Medicine, Maria.\nAgent: Hi Maria, it's Mira. We received Dr. Chen's order for Eleanor Martinez, but it's coded K0003, a lightweight wheelchair, and the NPI is missing. Medicare will deny it as written. She needs a standard manual wheelchair, K0001.\nOffice: Oh no, the MA must have picked the wrong template. Let me grab Dr. Chen... okay, she's corrected it to K0001, added her NPI and re-signed. I'm faxing it now.\nAgent: Thank you, I'll watch for it."
+            "transcript": "Office: Sunrise Family Medicine, Maria.\nAgent: Hi Maria, it's Mira. We received Dr. Chen's order for Eleanor Martinez, but it's coded K0003, a lightweight wheelchair. She needs a standard manual wheelchair, K0001, and the claim has to match what's delivered.\nOffice: Oh no, the MA must have picked the wrong template. Let me grab Dr. Chen... okay, she's corrected it to K0001 and re-signed. I'm faxing it now.\nAgent: Thank you, I'll watch for it."
           }
         ]
       }

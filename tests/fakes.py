@@ -2,22 +2,44 @@
 
 from typing import Any
 
-from mira.extraction import PatientExtraction, PcpExtraction, SupplierExtraction
-from mira.models import PatientUpdateResult, PcpOrderResult, PcpOrderStatus, SupplierScreenResult
+from mira.extraction import FollowupExtraction, PatientExtraction, PcpExtraction, SupplierExtraction
+from mira.models import (
+    DeliveryStatus,
+    FollowupResult,
+    PatientUpdateResult,
+    PcpOrderResult,
+    PcpOrderStatus,
+    SupplierScreenResult,
+)
 
 CONFIDENT = 0.9
 
 
-def supplier(accepting: bool | None, in_stock: bool | None, committed: bool | None, eta: int | None) -> SupplierExtraction:
+def supplier(
+    accepting: bool | None,
+    in_stock: bool | None,
+    committed: bool | None,
+    eta: int | None,
+    serves_area: bool | None = True,
+    accepts_assignment: bool | None = None,
+) -> SupplierExtraction:
     return SupplierExtraction(
         result=SupplierScreenResult(
             accepting_new_medicare_patients=accepting,
             has_equipment_in_stock=in_stock,
-            serves_patient_area=True,
+            serves_patient_area=serves_area,
             delivery_eta_days=eta,
             committed_to_deliver=committed,
+            accepts_assignment=accepts_assignment,
             notes="",
         ),
+        confidence=CONFIDENT,
+    )
+
+
+def followup(status: DeliveryStatus, received: bool | None = True, eta: int | None = None) -> FollowupExtraction:
+    return FollowupExtraction(
+        result=FollowupResult(order_received=received, delivery_status=status, delivery_eta_days=eta, notes=""),
         confidence=CONFIDENT,
     )
 
@@ -42,8 +64,8 @@ RULES: list[tuple[str, Any]] = [
     ("stopped taking new Medicare", supplier(False, None, False, None)),
     ("put us down", supplier(True, True, True, 3)),
     ("we're out", supplier(True, False, None, None)),
-    ("we've got plenty", supplier(True, True, True, 4)),
-    ("on the truck", supplier(True, True, True, 4)),
+    ("we've got plenty", supplier(True, True, True, 4, accepts_assignment=True)),
+    ("on the truck", followup(DeliveryStatus.SCHEDULED, eta=4)),
     ("send it over to Dr. Chen's MA", pcp(PcpOrderStatus.IN_PROGRESS)),
     ("I don't see any order request", pcp(PcpOrderStatus.NOT_RECEIVED)),
     ("Dr. Chen signed it this morning", pcp(PcpOrderStatus.SIGNED_AND_SENT)),

@@ -83,6 +83,9 @@ def _print_summary(summary: CaseSummary) -> None:
             print(f"  {escalation_id}")
     if summary.closing_note:
         print(f"Closing note: {summary.closing_note}")
+    callbacks = [c.escalation_id for c in summary.patient_contacts if c.escalation_id]
+    if callbacks:
+        print(f"{len(callbacks)} callback(s) still open for a person: uv run python -m mira.human list")
 
 
 def _print_waiting_banner(review: PendingReview, namespace: str) -> None:
