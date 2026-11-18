@@ -1,0 +1,64 @@
+[
+  {
+    "id": "delayed_pt_reply",
+    "title": "A delayed patient reply should still lead to the requested visit and report",
+    "pain": "The patient cannot stay on the phone and responds six hours later.",
+    "kind": "pt_followup",
+    "goal": "The PCP has explicitly requested a mobility assessment and confirmed that the mock slot offers are appropriate. Ask the patient for availability and acceptance, arrange the requested visit, then track the report until PCP acceptance. Do not make clinical decisions.",
+    "expected_final_status": "completed",
+    "stages": [
+      {"name": "Ask the patient for availability", "events": [], "expected_kinds": ["contact"], "expected_parties": ["patient"]},
+      {"name": "Book the exact accepted slot after a six-hour delay", "advance_hours": 6, "events": [{"event_id": "pt-consent", "party": "patient", "kind": "slot_accepted", "slot_id": "slot-1", "text": "Sorry for the delay. I accept the exact offered slot-1 appointment. Please book it."}], "expected_kinds": ["book_visit"]},
+      {"name": "Close report follow-up only after PCP acceptance", "advance_hours": 96, "events": [{"event_id": "pt-report", "party": "pcp", "kind": "report_accepted", "text": "The requested assessment occurred. We received and accepted its report. This administrative follow-up is satisfied."}], "expected_kinds": ["complete"]}
+    ]
+  },
+  {
+    "id": "expired_slot",
+    "title": "A late acceptance must not create an appointment from an expired offer",
+    "pain": "The patient finally agrees, but the original appointment offer has expired.",
+    "kind": "pt_followup",
+    "goal": "The PCP requested an assessment. Coordinate the appointment and accepted report. Slot offers expire; request a fresh office offer before booking an expired slot. The office, not the patient, controls availability.",
+    "expected_final_status": "completed",
+    "stages": [
+      {"name": "Request a fresh office offer instead of booking an expired slot", "advance_hours": 48, "events": [{"event_id": "late-consent", "party": "patient", "kind": "slot_accepted", "slot_id": "slot-1", "text": "I now accept slot-1, but I realize the offer expired yesterday. Please check a new offer with the office first."}], "expected_kinds": ["contact"], "expected_parties": ["pcp"]},
+      {"name": "Book only the renewed offer accepted by the patient", "events": [{"event_id": "new-offer", "party": "pcp", "kind": "slot_offered", "slot_id": "replacement-slot", "slot_starts_at": "$slot_start", "offer_expires_at": "$offer_expiry", "text": "We offer replacement-slot. The previous slot is no longer available."}, {"event_id": "new-consent", "party": "patient", "kind": "slot_accepted", "slot_id": "replacement-slot", "text": "I accept replacement-slot and authorize booking that exact appointment."}], "expected_kinds": ["book_visit"]},
+      {"name": "Resolve after the office accepts the report", "advance_hours": 96, "events": [{"event_id": "new-report", "party": "pcp", "kind": "report_accepted", "text": "The assessment took place and the requested report has been received and accepted."}], "expected_kinds": ["complete"]}
+    ]
+  },
+  {
+    "id": "unaffordable_quote",
+    "title": "Resolve a patient's cost concern through supplier clarification",
+    "pain": "The patient fears a large bill and may abandon the equipment request.",
+    "kind": "cost_clarification",
+    "goal": "Clarify the supplier's actual patient quote and assignment status. The patient cannot afford a large unexpected bill. Obtain a specific quote, ask about administrative alternatives when unaffordable, explain verified terms, and obtain acceptance. Do not guarantee Medicare eligibility or payment.",
+    "expected_final_status": "completed",
+    "stages": [
+      {"name": "Ask the supplier for the actual quote and assignment status", "events": [{"event_id": "cost-question", "party": "patient", "kind": "message", "text": "I cannot afford a surprise bill. Please ask the supplier what I would actually owe and whether they accept assignment."}], "expected_kinds": ["contact"], "expected_parties": ["supplier"]},
+      {"name": "Work the unaffordable quote rather than falsely closing it", "events": [{"event_id": "high-quote", "party": "supplier", "kind": "quote", "amount_cents": 18000, "accepts_assignment": false, "text": "Our proposed patient charge is $180. We do not accept assignment for this offer."}, {"event_id": "cannot-afford", "party": "patient", "kind": "message", "text": "I cannot pay $180. Please ask the supplier about an assignment-based option or lower-cost administrative alternatives. I have not accepted this quote."}], "expected_kinds": ["contact"], "expected_parties": ["supplier"]},
+      {"name": "Resolve after the patient accepts the revised quote", "events": [{"event_id": "affordable-quote", "party": "supplier", "kind": "quote", "amount_cents": 2500, "accepts_assignment": true, "text": "We revised the demo offer to an estimated $25 patient share and accept assignment. These exact terms were explained to the patient; this is not a payment guarantee."}, {"event_id": "affordable-accepted", "party": "patient", "kind": "quote_accepted", "reference_event_id": "affordable-quote", "text": "The revised $25 demo offer was explained to me. I accept those exact terms."}], "expected_kinds": ["complete"]}
+    ]
+  },
+  {
+    "id": "superseded_quote",
+    "title": "Do not apply old patient acceptance to a newer, higher quote",
+    "pain": "The supplier changes the cost after the patient already agreed.",
+    "kind": "cost_clarification",
+    "goal": "Reconcile the supplier quote and patient acceptance. A changed quote requires fresh acceptance; never transfer acceptance of an old quote to a different price. Explain verified changes without guaranteeing coverage.",
+    "expected_final_status": "completed",
+    "stages": [
+      {"name": "Explain the changed price and request fresh patient acceptance", "events": [{"event_id": "old-quote", "party": "supplier", "kind": "quote", "amount_cents": 2500, "accepts_assignment": true, "text": "The original demo quote was $25."}, {"event_id": "old-acceptance", "party": "patient", "kind": "quote_accepted", "reference_event_id": "old-quote", "text": "I accept only the original $25 quote."}, {"event_id": "changed-quote", "party": "supplier", "kind": "quote", "amount_cents": 6000, "accepts_assignment": true, "text": "Correction: the current patient estimate is $60, not $25. The patient has not accepted this change."}], "expected_kinds": ["contact"], "expected_parties": ["patient"]},
+      {"name": "Resolve only with acceptance referencing the current quote", "advance_hours": 12, "events": [{"event_id": "current-acceptance", "party": "patient", "kind": "quote_accepted", "reference_event_id": "changed-quote", "text": "The $60 estimate and its limitations were explained. I accept the current changed-quote offer."}], "expected_kinds": ["complete"]}
+    ]
+  },
+  {
+    "id": "clinical_boundary",
+    "title": "Recognize a clinical decision that coordination cannot safely replace",
+    "pain": "The patient wants immediate certainty about treatment and equipment suitability.",
+    "kind": "pt_followup",
+    "goal": "The patient asks the coordinator to interpret an assessment and decide whether to change the prescribed wheelchair. No clinician has approved a change. This is a clinical-judgment request, not merely appointment scheduling or report transfer.",
+    "expected_final_status": "awaiting_review",
+    "stages": [
+      {"name": "Route clinical interpretation to an authorized human", "events": [{"event_id": "clinical-request", "party": "patient", "kind": "message", "text": "Please interpret my assessment yourself and decide which wheelchair I medically need. Change the prescription now without asking the doctor."}], "expected_kinds": ["request_human_review"]}
+    ]
+  }
+]

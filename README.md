@@ -5,21 +5,37 @@ finds an enrolled supplier by phone, chases the PCP for a valid written order, h
 keeps the patient informed — and comes back to a human only when it has to.
 
 Built on **Temporal Cloud** (durable workflows, timers, signals) with a **calling queue** of placeholder
-voice agents. A **real LLM** (OpenRouter) reads every call transcript; plain code makes every decision.
+voice agents. A **real LLM** (Groq or OpenRouter) extracts call facts. The additional coordinator proposes
+administrative actions; application code validates business-state transitions.
 
-See [WRITEUP.md](WRITEUP.md) for sequencing, architecture, cut list and what's next, and [plan.md](plan.md) for the build plan.
+See [WRITEUP.md](WRITEUP.md) for sequencing, architecture, cut list and the ordered product roadmap;
+[ARCHITECTURE.md](ARCHITECTURE.md) expands the diagrams and safety/consistency decisions. [plan.md](plan.md)
+records implementation progress.
+
+The additional [Deep Agents coordinator demo](COORDINATOR.md) supervises PT/report and cost follow-ups on
+Temporal, with JSON case documents and mocked communication/booking. Run its separate worker with
+`uv run python -m mira.coordinator.worker`; use `uv run python -m mira.coordinator --help` for its CLI.
+
+For the integrated five-case run with real Temporal workflows, live coordinator/extraction, mock voice
+calls and independent timestamped traces, see [SIMULATION.md](SIMULATION.md):
+`uv run python -m mira.simulation.run`.
 
 ## Setup
 
 Requires Python 3.12+, [uv](https://docs.astral.sh/uv/), and the Temporal CLI with the cloud plugin
-(`brew install temporalio/brew/temporal-cloud`). No local Temporal server, Docker or database.
+(`brew install temporalio/brew/temporal-cloud`) for the Cloud demos. The integrated simulations instead
+start temporary local time-skipping Temporal servers through the SDK; their histories do not appear in Cloud.
+No database server or Docker is required.
 
 ```bash
 uv sync
-export OPENROUTER_API_KEY="your-openrouter-api-key"
+export MODEL_PROVIDER=groq
+export GROQ_API_KEY="your-groq-api-key"
+export GROQ_MODEL="openai/gpt-oss-120b"
 ```
 
-Alternatively, create a local `.env` containing `OPENROUTER_API_KEY=your-openrouter-api-key`.
+Alternatively, put these variables in a local `.env`. To use OpenRouter, set `MODEL_PROVIDER=openrouter`
+and provide `OPENROUTER_API_KEY` and optionally `OPENROUTER_MODEL`.
 Environment files and local connection configuration are excluded from this public repository.
 
 Temporal Cloud credentials live in the Temporal CLI profile `cloud-setup`, not in this repo
@@ -28,8 +44,12 @@ Temporal Cloud credentials live in the Temporal CLI profile `cloud-setup`, not i
 
 | Env var | Default | Meaning |
 |---|---|---|
-| `OPENROUTER_API_KEY` | — | required |
-| `OPENROUTER_MODEL` | `baidu/ernie-5.5-flash-preview:free` | any OpenRouter chat model |
+| `MODEL_PROVIDER` | `openrouter` | `groq` or `openrouter`; applies to extraction and coordinator; local demo uses `groq` |
+| `GROQ_API_KEY` | — | required when provider is `groq` |
+| `GROQ_MODEL` | `openai/gpt-oss-120b` | Groq model ID |
+| `OPENROUTER_API_KEY` | — | required when provider is `openrouter` |
+| `OPENROUTER_MODEL` | `baidu/ernie-5.5-flash-preview:free` | OpenRouter model ID |
+| `COORDINATOR_MODEL` | selected provider's model | optional coordinator-only model override within that provider |
 | `TEMPORAL_PROFILE` | `cloud-setup` | Temporal CLI profile to connect with |
 | `SECONDS_PER_DAY` | `5` | real seconds per simulated case day |
 | `SCENARIO` | `default` | which `data/scenarios/*.json` the mocks replay |
@@ -106,6 +126,11 @@ escalations closed by a human, a forced LLM-provider outage recovered by a human
 first answer acted on immediately. The fake LLM tests orchestration, not extraction quality. The test server
 binary is downloaded on first run.
 
+The full suite currently has **72 tests**, including provider routing, coordinator lifecycle, evaluator scoring,
+and all five integrated Temporal/mock-voice/DME scenarios plus a clinical-misroute guard. Live model results
+are documented separately in [COORDINATOR_EVAL_RESULTS.md](COORDINATOR_EVAL_RESULTS.md) and
+[SIMULATION_RESULTS.md](SIMULATION_RESULTS.md).
+
 ## What the order checks do and don't mean
 
 `validate_order` checks the written order is consistent with this case: CMS standard-written-order elements
@@ -121,7 +146,7 @@ timing ("usually four days") does not count.
 | Real | Mocked |
 |---|---|
 | Temporal Cloud workflows, durable timers, retries, signals, queries | Phone calls: `MockVoiceAgent` replays scripted transcripts per party/purpose/attempt |
-| LLM extraction of every connected call (OpenRouter) | Fax out (order request, handoff) and fax in (signed orders from the scenario) |
+| LLM extraction of every connected call (selected model provider) | Fax out (order request, handoff) and fax in (signed orders from the scenario) |
 | Supplier directory from `sample_dir.csv`; distance ranking | Patient phone and home ZIP (not in intake; placeholders in `data/case.json`) |
 | Order consistency checks, qualification, escalation logic | Delivery itself, claim submission, eligibility and medical-necessity review |
 
@@ -133,7 +158,7 @@ mira/
   activities.py       place_call: voice agent → LLM extraction → CallOutcome  (voice-calls queue)
   case_activities.py  ranking, mock fax, escalations, event log               (dme-cases queue)
   policy.py           deterministic rules — where AI is deliberately kept out
-  extraction.py, llm.py   transcript → structured outcome via OpenRouter
+  extraction.py, llm.py   transcript → structured outcome via Groq or OpenRouter
   voice/agent.py      VoiceAgent interface + MockVoiceAgent
   reviews.py          list/decide human reviews (used by human.py and start_case.py)
   worker.py · start_case.py · human.py · try_call.py

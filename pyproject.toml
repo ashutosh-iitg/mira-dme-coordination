@@ -8,6 +8,8 @@ dependencies = [
     "openai>=1.50",
     "pydantic>=2.8",
     "python-dotenv>=1.0",
+    "deepagents>=0.7.39",
+    "langchain-openai>=1.8.1",
 ]
 
 [dependency-groups]

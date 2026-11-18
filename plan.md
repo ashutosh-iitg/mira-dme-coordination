@@ -92,3 +92,28 @@ place_call:   MockVoiceAgent → transcript → LLM extraction → CallOutcome
 - DB, auth, UI (Temporal UI shows state)
 - Real fax/portal and Medicare claim submission
 - Multi-case concurrency tuning, supplier responsiveness history (derivable later from `events.jsonl`)
+
+## Agent coordinator increment
+
+- [x] Evaluated Deep Agents as the bounded planner/tool loop on Temporal; see `COORDINATOR.md`
+- [x] Long-running supervisor: reply/new-task signals, durable reminder timers, explicit reviews and close
+- [x] JSON document lifecycle: atomic writes, locks, versions, evidence, action receipts, retry deduplication
+- [x] Minimal PT/report and supplier-quote follow-ups; voice unchanged; all new communication/booking mocked
+- [x] Regression tests include the actual Deep Agents graph under a fake model inside Temporal
+- [x] Live coordinator tool-call smoke test with Groq `openai/gpt-oss-120b`; provider selected via `MODEL_PROVIDER`, with `GROQ_MODEL` and optional `COORDINATOR_MODEL`
+
+## End-to-end simulation increment
+
+- [x] Parent Temporal simulation connects the coordinator prerequisite to the existing DME case workflows
+- [x] Mock voice calls, delayed callback signals, real model decisions/extraction, and guarded human review
+- [x] Five sequential live cases: four delivery schedules and one clinical human handoff; 5/5 expected checks
+- [x] Independent timestamped HTML/Markdown/JSONL traces and 27 exported Temporal histories
+- [x] 72 regression tests; results and limitations in `SIMULATION_RESULTS.md`
+
+## Product direction and documentation
+
+- [x] Rewrite the assignment writeup around the implemented coordinator and simulation composition
+- [x] Current architecture diagram and detailed state/scaling decisions in `ARCHITECTURE.md`
+- [x] Ordered roadmap: coordinator → safeguards/online checks → observability/evaluation → models → voice → additional tools/channels
+- [x] Prefer safety over liveness and consistency over availability; distinguish current checks from production requirements
+- [ ] Next execution step: integrated scenarios on Temporal Cloud with compressed timers and visible Cloud histories

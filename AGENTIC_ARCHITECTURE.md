@@ -1,6 +1,11 @@
 # Decision proposal: an agent-led case coordinator
 
-Status: proposed, not implemented. Evaluated 18 November 2026 against the current Mira prototype. The six original follow-ups were reviewed and committed first; see `FOLLOWUP_REVIEW.md`.
+Status: historical proposal from 18 November 2026, partially implemented afterward. The current implementation,
+diagrams and safety/consistency direction are documented in [ARCHITECTURE.md](ARCHITECTURE.md). The original
+six follow-ups were reviewed first; see `FOLLOWUP_REVIEW.md`. Database and specialist-agent sections below
+remain proposals and are not descriptions of the JSON prototype.
+
+Implementation follow-on: [COORDINATOR.md](COORDINATOR.md) describes the minimal Deep Agents/Temporal supervisor now implemented. Per the assignment constraint, it uses JSON documents instead of the transactional database proposed below; the broader architecture remains a future design.
 
 ## Recommendation
 

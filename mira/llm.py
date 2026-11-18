@@ -6,7 +6,7 @@ from typing import TypeVar
 from openai import AsyncOpenAI, BadRequestError, OpenAIError
 from pydantic import BaseModel, ValidationError
 
-from mira.config import OPENROUTER_BASE_URL, llm_settings
+from mira.config import llm_settings
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +21,8 @@ class LlmError(RuntimeError):
 
 
 def _client() -> AsyncOpenAI:
-    return AsyncOpenAI(base_url=OPENROUTER_BASE_URL, api_key=llm_settings().api_key)
+    settings = llm_settings()
+    return AsyncOpenAI(base_url=settings.base_url, api_key=settings.api_key)
 
 
 def _parse(content: str, schema: type[T]) -> T:
@@ -32,14 +33,14 @@ async def _create(client: AsyncOpenAI, model: str, messages: list[dict], respons
     kwargs = {"response_format": response_format} if response_format else {}
     response = await client.chat.completions.create(model=model, messages=messages, temperature=0, **kwargs)
     if not response.choices:
-        raise LlmError(f"OpenRouter returned no choices for model {model}")
+        raise LlmError(f"Model provider returned no choices for model {model}")
     return response.choices[0].message.content or ""
 
 
 async def complete_structured(system_prompt: str, user_prompt: str, schema: type[T]) -> T:
     """Ask the model for JSON matching `schema`; re-prompt with the validation error if it drifts.
 
-    The schema is also embedded in the prompt because not every OpenRouter model honours
+    The schema is also embedded in the prompt because not every model honours
     `response_format`; if the provider rejects it we fall back to prompt-only JSON.
     """
     schema_json = json.dumps(schema.model_json_schema())
@@ -60,12 +61,12 @@ async def complete_structured(system_prompt: str, user_prompt: str, schema: type
             content = await _create(client, model, messages, response_format)
         except BadRequestError as exc:
             if response_format is None:
-                raise LlmError(f"OpenRouter rejected the request: {exc}") from exc
+                raise LlmError(f"Model provider rejected the request: {exc}") from exc
             logger.info("Model %s rejected response_format; retrying with prompt-only JSON", model)
             response_format = None
             content = await _create(client, model, messages, None)
         except OpenAIError as exc:
-            raise LlmError(f"OpenRouter request failed: {exc}") from exc
+            raise LlmError(f"Model provider request failed: {exc}") from exc
 
         try:
             return _parse(content, schema)

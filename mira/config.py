@@ -19,7 +19,9 @@ CASE_TASK_QUEUE = "dme-cases"
 VOICE_CALL_TASK_QUEUE = "voice-calls"
 
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
+GROQ_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_OPENROUTER_MODEL = "baidu/ernie-5.5-flash-preview:free"
+DEFAULT_GROQ_MODEL = "openai/gpt-oss-120b"
 DEFAULT_SECONDS_PER_DAY = 5.0
 
 load_dotenv(PROJECT_ROOT / ".env")
@@ -37,6 +39,8 @@ DEFAULT_TEMPORAL_PROFILE = "cloud-setup"
 class LlmSettings:
     api_key: str
     model: str
+    provider: str
+    base_url: str
 
 
 def temporal_profile() -> str:
@@ -44,10 +48,21 @@ def temporal_profile() -> str:
 
 
 def llm_settings() -> LlmSettings:
-    api_key = os.getenv("OPENROUTER_API_KEY")
+    provider = os.getenv("MODEL_PROVIDER", "openrouter").strip().lower()
+    providers = {
+        "openrouter": ("OPENROUTER_API_KEY", "OPENROUTER_MODEL", OPENROUTER_BASE_URL, DEFAULT_OPENROUTER_MODEL),
+        "groq": ("GROQ_API_KEY", "GROQ_MODEL", GROQ_BASE_URL, DEFAULT_GROQ_MODEL),
+    }
+    if provider not in providers:
+        raise ConfigError(f"Unknown MODEL_PROVIDER {provider!r}; choose groq or openrouter")
+    key_name, model_name, base_url, default_model = providers[provider]
+    api_key = os.getenv(key_name, "").strip()
     if not api_key:
-        raise ConfigError("OPENROUTER_API_KEY is not set. Export it or add it to a local .env file.")
-    return LlmSettings(api_key=api_key, model=os.getenv("OPENROUTER_MODEL", DEFAULT_OPENROUTER_MODEL))
+        raise ConfigError(f"{key_name} is not set. Export it or add it to a local .env file.")
+    model = os.getenv(model_name, default_model).strip()
+    if not model:
+        raise ConfigError(f"{model_name} must not be empty")
+    return LlmSettings(api_key=api_key, model=model, provider=provider, base_url=base_url)
 
 
 def scenario_path() -> Path:
